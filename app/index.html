@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An interactive webcam mirror with virtual condensation.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; media-src 'self' blob:; object-src 'none'; base-uri 'none'">
+  <meta name="theme-color" content="#ffffff">
+  <title>🪞 Emma’s Fog Mirror</title>
+  <link rel="stylesheet" href="./style.css?v=camera-start">
+  <script type="module" src="./app.js?v=camera-start"></script>
+</head>
+<body>
+  <main class="studio">
+    <header class="masthead">
+      <h1>🪞fog mirror</h1>
+      <span class="privacy"><span class="privacy-dot"></span>Camera stays on this device</span>
+    </header>
+
+    <div class="workspace">
+      <section class="mirror" id="mirror-view" aria-label="Mirror preview">
+        <canvas id="mirror" width="960" height="640" aria-label="Live mirror with fog and hand effects"></canvas>
+        <div class="mirror-idle" id="idle">
+          <button class="button primary" id="start-camera" type="button">enable your camera to start</button>
+        </div>
+        <span class="live-label" id="live" hidden><i></i><span id="live-state">Live mirror</span></span>
+        <span class="live-label recording-label" id="recording" hidden><i></i><span id="elapsed">0:00</span></span>
+        <div class="photo-countdown" id="photo-countdown" role="status" aria-live="polite" hidden></div>
+        <div class="mirror-tools">
+          <button class="mirror-tool" id="fullscreen" type="button" aria-label="Enter fullscreen" title="Enter fullscreen" aria-pressed="false">
+            <span class="fullscreen-icon" aria-hidden="true"></span>
+          </button>
+          <button class="mirror-tool" id="camera-menu-button" type="button" aria-label="Capture photo or video" title="Capture photo or video" aria-expanded="false" aria-controls="camera-menu" disabled>
+            <span class="capture-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="mirror-capture" id="camera-menu" role="group" aria-label="Capture mirror" hidden>
+          <div class="capture-choices" id="camera-choices">
+            <button class="button record" id="take-photo" type="button">Take photo</button>
+            <button class="button record" id="choose-video" type="button">Record video</button>
+          </div>
+          <form class="video-options" id="video-options" hidden>
+            <label for="video-length">Video length</label>
+            <select id="video-length" name="length">
+              <option value="15">15 sec</option>
+              <option value="30" selected>30 sec</option>
+              <option value="45">45 sec</option>
+              <option value="60">1 min</option>
+              <option value="75">1 min 15 sec</option>
+              <option value="90">1 min 30 sec</option>
+              <option value="105">1 min 45 sec</option>
+              <option value="120">2 min</option>
+            </select>
+            <div class="video-actions">
+              <button class="button record" id="camera-back" type="button">Back</button>
+              <button class="button primary" id="start-video" type="submit">Start recording</button>
+            </div>
+          </form>
+          <button class="button record" id="stop-video" type="button" hidden>Stop recording</button>
+          <a class="button download" id="download-photo" hidden>Download JPG <span aria-hidden="true">↓</span></a>
+          <a class="button download" id="download-fullscreen" hidden>Download MP4 <span aria-hidden="true">↓</span></a>
+          <p class="notice" id="camera-message" role="status"></p>
+        </div>
+        <p id="fullscreen-message" class="mirror-message" role="status"></p>
+      </section>
+
+      <aside class="sidebar" aria-label="Mirror controls and gestures">
+        <section class="panel appearance" aria-labelledby="fog-appearance">
+          <h2 id="fog-appearance"><label for="wetness">Fog appearance</label></h2>
+          <input id="wetness" class="fog-lightness-range" type="range" min="0" max="100" value="0" aria-valuetext="Dry fog">
+          <div class="range-labels" aria-hidden="true"><span>Dry</span><span>Wet</span></div>
+        </section>
+        <section class="panel gestures">
+          <h2>Gestures</h2>
+          <ul>
+            <li><span class="gesture-icon fog-icon" aria-hidden="true"></span><div><strong>Fog the mirror</strong><p>Open and move your mouth.</p></div></li>
+            <li><span class="gesture-icon line-icon" aria-hidden="true"></span><div><strong>Draw a line</strong><p>Point, then push your index finger toward the camera. Pull back to stop.</p></div></li>
+            <li><span class="gesture-icon print-icon" aria-hidden="true"></span><div><strong>Leave a handprint</strong><p>Fit your whole hand in view, spread your fingers, and hold briefly.</p></div></li>
+            <li><span class="gesture-icon sweep-icon" aria-hidden="true"></span><div><strong>Clear an area</strong><p>Bring your open hand closer to the camera, then wave.</p></div></li>
+          </ul>
+        </section>
+        <section class="panel capture" aria-labelledby="capture-title">
+          <div class="capture-heading"><h2 id="capture-title">Recording</h2><span>Silent · 2 min max</span></div>
+          <button class="button record" id="record-button" type="button" disabled><i aria-hidden="true"></i><span>Record mirror</span></button>
+          <a class="button download" id="download" hidden>Download MP4 <span aria-hidden="true">↓</span></a>
+          <p id="record-message" class="notice" role="status"></p>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="toolbar">
+      <p class="status" id="status" role="status" data-state="idle">Camera off</p>
+      <button class="button camera-off" id="stop-camera" type="button" hidden>Turn off camera</button>
+    </footer>
+    <video id="video" playsinline muted hidden></video>
+  </main>
+</body>
+</html>
