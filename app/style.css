@@ -23,8 +23,6 @@ h1 { font-family: "Instrument Sans", Inter, system-ui, sans-serif; font-size: cl
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(252px, 312px); gap: 18px; align-items: start; }
 .mirror { position: relative; container-type: inline-size; overflow: hidden; aspect-ratio: 3 / 2; border: 1px solid #c7e5e3; border-radius: 22px; isolation: isolate; background: #ffffff; }
 .mirror canvas { display: block; width: 100%; height: 100%; }
-.fingertip-cursor { position: absolute; z-index: 1; width: 14px; height: 14px; border: 2px solid #a1efea; border-radius: 50%; box-shadow: 0 0 0 1px #183c3b; transform: translate(-50%, -50%); pointer-events: none; }
-.fingertip-cursor.is-pressed { background: #a1efea; }
 .mirror-expanded { overflow: hidden; }
 .mirror.is-expanded { position: fixed; inset: 0; z-index: 10; }
 .mirror:is(:fullscreen, .is-expanded) { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }

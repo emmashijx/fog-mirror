@@ -28,31 +28,6 @@ export function classifyHand(points, drawing = false) {
   return 'other';
 }
 
-export function isPalmFacing(points, handedness) {
-  if (!(handedness?.score >= 0.7) ||
-      !['Left', 'Right'].includes(handedness.categoryName) ||
-      points?.length !== 21) {
-    return false;
-  }
-  const [wrist, index, middle, pinky] = [0, 5, 9, 17].map(i => points[i]);
-  const forward = { x: middle.x - wrist.x, y: middle.y - wrist.y, z: middle.z - wrist.z };
-  const across = { x: index.x - pinky.x, y: index.y - pinky.y, z: index.z - pinky.z };
-  const normal = {
-    x: forward.y * across.z - forward.z * across.y,
-    y: forward.z * across.x - forward.x * across.z,
-    z: forward.x * across.y - forward.y * across.x,
-  };
-  // MediaPipe Tasks labels the subject's hands in the unmirrored tracking frame.
-  const direction = handedness.categoryName === 'Right' ? 1 : -1;
-  return direction * normal.z >= 0.55 * Math.hypot(normal.x, normal.y, normal.z) && direction * normal.z > 0;
-}
-
-export function isFullHandVisible(imagePoints, posePoints) {
-  return imagePoints.every(({ x, y }) => x > 0 && x < 1 && y > 0 && y < 1) &&
-    extension(posePoints, [1, 2, 3, 4]) >= 0.76 &&
-    distance3D(posePoints[4], posePoints[5]) >= distance3D(posePoints[5], posePoints[17]) * 0.52;
-}
-
 function handDepth(points) {
   const [wrist, index, middle, pinky, tip] = [0, 5, 9, 17, 8].map(i => points[i]);
   if (![wrist, index, middle, pinky, tip].every(point => Number.isFinite(point.z))) return null;
@@ -101,13 +76,8 @@ export class MouthGesture {
 }
 
 export class HandGesture {
-  update(pose, points, timestamp, { palmFacing = false, canPrint = false } = {}) {
+  update(pose, points, timestamp) {
     const previous = this.sample;
-    if (!canPrint) this.palmSince = null;
-    if (!palmFacing) {
-      this.clearing = false;
-      this.sweepStart = null;
-    }
     // Keep a hold through one or two uncertain pose readings when the hand is still tracked.
     if (pose === 'other' && points && previous?.pose === 'open' && timestamp - previous.timestamp <= 125) return null;
     if (pose === 'other' && this.pointPressed && timestamp - previous.timestamp <= 135) {
@@ -125,13 +95,10 @@ export class HandGesture {
       this.reset();
       this.sample = { pose, palm, tip: points[8], rawTip: points[8], timestamp };
       this.anchor = palm;
-      this.sweepStart = palmFacing ? palm : null;
+      this.sweepStart = palm;
       this.steadySince = timestamp;
       if (pose === 'point') this.setNeutralDepth(points, timestamp);
-      else {
-        this.openScale = handDepth(points)?.scale;
-        if (canPrint) this.palmSince = timestamp;
-      }
+      else this.openScale = handDepth(points)?.scale;
       return null;
     }
 
@@ -146,6 +113,7 @@ export class HandGesture {
     if (pose === 'point') {
       if (movement > size * 1.6 ||
           (this.pointInterrupted && (movement > size * 0.6 || elapsed > 165))) {
+        this.stroke = null;
         this.setNeutralDepth(points, timestamp);
         this.sample.tip = rawTip;
         return null;
@@ -159,33 +127,23 @@ export class HandGesture {
         return null;
       }
       if (!contact) {
-        const stroke = this.stroke;
-        const start = this.pointStart;
         this.stroke = null;
-        this.pointStart = null;
-        if (wasPressed) this.sample.tip = rawTip;
-        if (stroke) {
-          return { type: 'line', from: stroke.end, control: stroke.control, to: stroke.control, width: stroke.width };
-        }
-        return start && { type: 'dot', from: start, to: start, width: fingertipWidth(size) };
+        this.sample.tip = rawTip;
+        return null;
       }
       if (!wasPressed) {
         this.sample.tip = rawTip;
-        this.pointStart = rawTip;
-        return null;
+        this.stroke = null;
+        const angle = Math.atan2(rawTip.y - points[7].y, rawTip.x - points[7].x);
+        return { type: 'line', from: rawTip, to: rawTip, width: fingertipWidth(size), footprintAngle: angle };
       }
-      const threshold = Math.max(5, Math.min(12, size * 0.08));
-      if (!this.stroke && distance(this.pointStart, rawTip) < threshold) return null;
-      return this.pointStroke(this.pointStart, tip, size);
+      return this.pointStroke(previous.tip, tip, size);
     }
 
-    if (canPrint) this.palmSince ??= timestamp;
-    return this.openHand(points, previous.palm, center, size, timestamp, palmFacing);
+    return this.openHand(points, previous.palm, center, size, timestamp);
   }
 
   setNeutralDepth(points, timestamp) {
-    this.pointStart = null;
-    this.stroke = null;
     this.neutralDepth = handDepth(points);
     this.neutralSince = timestamp;
     this.pointPressed = false;
@@ -234,7 +192,7 @@ export class HandGesture {
     return this.pointPressed;
   }
 
-  openHand(points, previous, center, size, timestamp, palmFacing) {
+  openHand(points, previous, center, size, timestamp) {
     const scale = handDepth(points)?.scale;
     this.openScale ??= scale;
     const approach = scale === undefined ? 0 : scale - this.openScale;
@@ -243,19 +201,18 @@ export class HandGesture {
       this.openNear = near;
       this.clearing = false;
       this.anchor = center;
-      this.sweepStart = palmFacing ? center : null;
+      this.sweepStart = center;
       this.steadySince = timestamp;
       if (near) this.printed = false;
       return null;
     }
     if (!near && scale !== undefined) this.openScale += approach * 0.04;
-    if (palmFacing) this.sweepStart ??= center;
 
     // Let the hand move away from a fresh print before recognizing another hold.
     if (this.printed) {
       const travel = distance(this.anchor, center);
-      if (near && palmFacing && distance(this.sweepStart, center) >= size * 0.4) {
-        const from = this.sweepStart;
+      if (near && travel >= size * 0.4) {
+        const from = this.anchor;
         this.printed = false;
         this.clearing = true;
         this.anchor = center;
@@ -265,7 +222,7 @@ export class HandGesture {
       if (travel >= this.printSize * 1.6) {
         this.printed = false;
         this.anchor = center;
-        this.sweepStart = palmFacing ? center : null;
+        this.sweepStart = center;
         this.steadySince = timestamp;
       }
       return null;
@@ -284,15 +241,13 @@ export class HandGesture {
     if (this.clearing) {
       this.clearing = false;
       this.sweepStart = center;
-    } else if (near && palmFacing && distance(this.sweepStart, center) >= size * 0.28) {
+    } else if (near && distance(this.sweepStart, center) >= size * 0.28) {
       this.clearing = true;
       return wave(this.sweepStart);
     }
 
-    const hold = near ? 440 : 330;
-    if (!moving && rest >= hold && this.palmSince !== null && timestamp - this.palmSince >= hold) {
+    if (!moving && rest >= (near ? 440 : 330)) {
       this.anchor = center;
-      this.sweepStart = center;
       this.printSize = size;
       return { type: 'print', points };
     }
@@ -317,7 +272,6 @@ export class HandGesture {
 
   reset() {
     this.sample = null;
-    this.pointStart = null;
     this.stroke = null;
     this.pointPressed = false;
     this.pressSamples = 0;
@@ -326,7 +280,6 @@ export class HandGesture {
     this.neutralDepth = null;
     this.anchor = null;
     this.steadySince = 0;
-    this.palmSince = null;
     this.sweepStart = null;
     this.openScale = undefined;
     this.openNear = false;

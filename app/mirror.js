@@ -1,13 +1,8 @@
 import { makeImpression } from './impression.js';
-import { makeCondensationHaze, makeWaterBeads } from './condensation.js?v=bead-density';
+import { makeWaterBeads } from './condensation.js?v=beads';
 
 const MARK_LIFETIME = 60;
 const MARK_FADE_START = 45;
-const BEAD_LAYERS = [
-  { start: 0.10, full: 0.48, seed: 71327 },
-  { start: 0.42, full: 0.76, seed: 95143 },
-  { start: 0.67, full: 1.00, seed: 58183 },
-];
 
 function markOpacity(age) {
   const progress = Math.min(1, Math.max(0, (age - MARK_FADE_START) / (MARK_LIFETIME - MARK_FADE_START)));
@@ -21,19 +16,17 @@ function layer(width, height, options) {
   return canvas.getContext('2d', options);
 }
 
-function mist(ctx, x, y, radius, opacity) {
-  const cloud = ctx.createRadialGradient(x, y, 0, x, y, radius);
+function depositCloud(ctx, x, y, radius, opacity) {
+  const cloud = ctx.createRadialGradient(x, y, radius * 0.09, x, y, radius);
   cloud.addColorStop(0, `rgba(255,255,255,${opacity})`);
-  cloud.addColorStop(0.25, `rgba(255,255,255,${opacity * 0.7})`);
-  cloud.addColorStop(0.52, `rgba(255,255,255,${opacity * 0.32})`);
-  cloud.addColorStop(0.76, `rgba(255,255,255,${opacity * 0.08})`);
-  cloud.addColorStop(0.92, `rgba(255,255,255,${opacity * 0.012})`);
+  cloud.addColorStop(0.48, `rgba(255,255,255,${opacity * 0.63})`);
+  cloud.addColorStop(0.80, `rgba(255,255,255,${opacity * 0.19})`);
   cloud.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = cloud;
   ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
 }
 
-function erase(ctx, { from, to, width, control }) {
+function erase(ctx, { from, to, width, control, footprintAngle }) {
   ctx.save();
   ctx.globalCompositeOperation = 'destination-out';
   ctx.strokeStyle = 'white';
@@ -46,7 +39,8 @@ function erase(ctx, { from, to, width, control }) {
   else ctx.lineTo(to.x, to.y);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(to.x, to.y, width / 2, 0, Math.PI * 2);
+  if (footprintAngle === undefined) ctx.arc(to.x, to.y, width / 2, 0, Math.PI * 2);
+  else ctx.ellipse(to.x, to.y, width * 0.65, width / 2, footprintAngle, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -127,16 +121,7 @@ export class Mirror {
     this.sinceFog = 0;
     this.surfaceDirty = true;
     const { x, y } = center;
-    // Vary the overlapping plumes to soften bands from repeatedly painting the same gradient.
-    const phase = ++this.fogDeposit * 2.399963;
-    const driftX = Math.cos(phase) * radius;
-    const driftY = Math.sin(phase) * radius;
-    mist(this.fog, x + driftX * 0.09, y + driftY * 0.08,
-      radius * (1.04 + Math.sin(phase * 1.7) * 0.12), opacity * 0.83);
-    mist(this.fog, x - radius * 0.24 + driftX * 0.14, y + radius * 0.17 + driftY * 0.10,
-      radius * 0.84, opacity * 0.36);
-    mist(this.fog, x + radius * 0.32 + driftY * 0.12, y + radius * 0.27 + driftX * 0.11,
-      radius * 0.77, opacity * 0.27);
+    depositCloud(this.fog, x, y, radius, opacity);
   }
 
   wipe(stroke) {
@@ -173,16 +158,12 @@ export class Mirror {
     if (this.appearanceDirty) {
       const appearance = this.wetAppearance;
       appearance.clearRect(0, 0, this.width, this.height);
-      this.haze ??= makeCondensationHaze();
-      appearance.globalAlpha = 1 - this.wetness * 0.62;
-      appearance.drawImage(this.haze, 0, 0, this.width, this.height);
-      this.beads ??= [];
-      for (const [i, { start, full, seed }] of BEAD_LAYERS.entries()) {
-        if (this.wetness <= start) break;
-        this.beads[i] ??= makeWaterBeads(this.width, this.height, seed);
-        appearance.globalAlpha = Math.min(1, (this.wetness - start) / (full - start));
-        appearance.drawImage(this.beads[i], 0, 0);
-      }
+      appearance.fillStyle = 'white';
+      appearance.globalAlpha = 1 - this.wetness * 0.57;
+      appearance.fillRect(0, 0, this.width, this.height);
+      this.beads ??= makeWaterBeads(this.width, this.height);
+      appearance.globalAlpha = Math.max(0, (this.wetness - 0.15) / 0.85);
+      appearance.drawImage(this.beads, 0, 0);
       appearance.globalAlpha = 1;
       this.appearanceDirty = false;
     }
@@ -207,7 +188,6 @@ export class Mirror {
 
   clear() {
     this.sinceFog = Infinity;
-    this.fogDeposit = 0;
     this.surfaceDirty = true;
     for (const ctx of [this.fog, this.sample]) {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);

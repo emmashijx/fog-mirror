@@ -3,7 +3,7 @@ let vision;
 self.onmessage = async ({ data }) => {
   if (data.type === 'init') {
     try {
-      const { createVision } = await import('./vision.js?v=palm');
+      const { createVision } = await import('./vision.js');
       vision = await createVision();
       self.postMessage({ type: 'ready' });
     } catch (error) {
