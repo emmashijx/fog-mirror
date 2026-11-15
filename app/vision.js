@@ -28,6 +28,7 @@ export async function createVision() {
         face: landmarks ? Object.fromEntries([13, 14, 61, 291].map(i => [i, landmarks[i]])) : null,
         hand: handResult.landmarks[0] ?? null,
         handWorld: handResult.worldLandmarks[0] ?? null,
+        handedness: handResult.handedness[0]?.[0] ?? null,
       };
     },
     close() {

@@ -1,7 +1,7 @@
-import { HandGesture, MouthGesture, classifyHand } from './gestures.js';
-import { Mirror } from './mirror.js?v=photo-timer';
+import { HandGesture, MouthGesture, classifyHand, isFullHandVisible, isPalmFacing } from './gestures.js?v=tap-drag';
+import { Mirror } from './mirror.js?v=tap-drag';
 import { MirrorRecorder, captureCanvas, drawCapture, mirrorCrop } from './recording.js?v=mp4';
-import { createTracker } from './tracker.js';
+import { createTracker } from './tracker.js?v=palm';
 
 const INFERENCE_INTERVAL = 42;
 const STALE_LANDMARKS = 320;
@@ -16,6 +16,7 @@ const stop = element('stop-camera');
 const idle = element('idle');
 const live = element('live');
 const liveState = element('live-state');
+const aim = element('fingertip-cursor');
 const status = element('status');
 const record = element('record-button');
 const recordLabel = record.querySelector('span');
@@ -62,6 +63,15 @@ function visibleCrop() {
   return mirrorCrop(mirror.canvas, mirrorView.clientWidth / mirrorView.clientHeight);
 }
 
+function updateAim(point, view, pressed) {
+  aim.hidden = !point;
+  if (!point) return;
+  const { x, y, width, height } = view ?? mirror.canvasBounds;
+  aim.style.left = ((point.x - x) / width * 100) + '%';
+  aim.style.top = ((point.y - y) / height * 100) + '%';
+  aim.classList.toggle('is-pressed', pressed);
+}
+
 function updateFullscreen() {
   const active = isFullscreen();
   fullscreen.setAttribute('aria-pressed', String(active));
@@ -69,6 +79,7 @@ function updateFullscreen() {
   fullscreen.title = active ? 'Exit fullscreen' : 'Enter fullscreen';
   fullscreenMessage.textContent = '';
   camera?.hand.reset();
+  updateAim();
 }
 
 function expandMirror(active) {
@@ -172,6 +183,7 @@ function finishCamera(message = 'Camera off', state = 'idle') {
   session.stream?.getTracks().forEach(track => track.stop());
   video.srcObject = null;
   mirror.clear();
+  updateAim();
   start.textContent = state === 'error' ? 'Retry camera' : startLabel;
   setStatus(message, state);
   updateCamera();
@@ -252,6 +264,7 @@ async function startCamera() {
 function trackingError(error) {
   console.error('Fog Mirror tracking:', error);
   liveState.textContent = 'Live mirror';
+  updateAim();
   setStatus('Tracking could not start or stopped. Turn the camera off and back on to retry.', 'error');
 }
 
@@ -260,6 +273,7 @@ function render(session, timestamp) {
   const seconds = Math.max(0, (timestamp - (session.lastFrame ?? timestamp)) / 1000);
   session.lastFrame = timestamp;
   mirror.fade(seconds);
+  if (!aim.hidden && timestamp - session.lastResult >= STALE_LANDMARKS) updateAim();
   if (session.fog && timestamp - session.lastResult < STALE_LANDMARKS) mirror.fogAt(session.fog, Math.min(seconds, 0.1));
   mirror.draw(video);
   if (recordingView && recorder.state === 'recording') {
@@ -279,19 +293,24 @@ function render(session, timestamp) {
 async function infer(session, timestamp) {
   session.busy = true;
   try {
-    const { face, hand, handWorld } = await session.tracker.detect(mirror.captureFrame(video), timestamp);
+    const { face, hand, handWorld, handedness } = await session.tracker.detect(mirror.captureFrame(video), timestamp);
     if (camera !== session || performance.now() - timestamp > STALE_LANDMARKS) return;
     const points = face && Object.fromEntries(Object.entries(face).map(([i, point]) => [i, mirror.toMirror(point)]));
     session.fog = session.mouth.update(points, timestamp);
     session.lastResult = timestamp;
     const pointsInMirror = hand?.map(point => mirror.toMirror(point));
-    const pose = hand ? classifyHand(handWorld ?? hand, session.hand.pointPressed) : 'other';
+    const posePoints = handWorld ?? hand;
+    const pose = hand ? classifyHand(posePoints, session.hand.pointPressed) : 'other';
     const view = visibleCrop();
     const outside = pointsInMirror && (pose === 'point' || session.hand.pointPressed) &&
       !mirror.inDrawingArea(pointsInMirror[8], view);
     if (outside) session.hand.reset();
-    const action = outside ? null : session.hand.update(pose, pointsInMirror, timestamp);
-    const label = session.hand.pointPressed ? 'Drawing' : 'Live mirror';
+    const palmFacing = pose === 'open' && isPalmFacing(posePoints, handedness);
+    const canPrint = palmFacing && isFullHandVisible(hand, posePoints);
+    const action = outside ? null : session.hand.update(pose, pointsInMirror, timestamp, { palmFacing, canPrint });
+    const pointing = !outside && pose === 'point';
+    updateAim(pointing ? session.hand.sample?.tip : null, view, session.hand.pointPressed);
+    const label = session.hand.stroke ? 'Drawing' : 'Live mirror';
     if (liveState.textContent !== label) liveState.textContent = label;
     if (action?.type === 'print') session.hand.printed = mirror.stamp(action.points, view);
     else if (action) mirror.wipe(action);

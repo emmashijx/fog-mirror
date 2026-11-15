@@ -26,13 +26,13 @@ export async function createTracker(signal) {
   signal.throwIfAborted();
   let worker;
   try {
-    worker = new Worker(new URL('./tracking-worker.js', import.meta.url));
+    worker = new Worker(new URL('./tracking-worker.js?v=palm', import.meta.url));
     await startWorker(worker, signal);
     signal.throwIfAborted();
   } catch (error) {
     worker?.terminate();
     signal.throwIfAborted();
-    const { createVision } = await import('./vision.js');
+    const { createVision } = await import('./vision.js?v=palm');
     const vision = await createVision();
     if (signal.aborted) {
       vision.close();

@@ -36,7 +36,7 @@ When the open hand meets the hold threshold, join a rounded palm and thumb web t
 
 ### Adjust fog opacity
 
-As wetness rises, blend a thinner white veil with a cached stationary water-bead texture. Clip the result to the fog mask so wipes clear both the haze and the beads. Render the result to the same canvas the recorder captures.
+As wetness rises, blend a thinner white veil with additional cached layers of stationary water beads. Clip the result to the fog mask and render it to the same canvas the recorder captures.
 
 ### Frame fullscreen captures
 

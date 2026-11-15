@@ -7,8 +7,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; media-src 'self' blob:; object-src 'none'; base-uri 'none'">
   <meta name="theme-color" content="#ffffff">
   <title>🪞 Emma’s Fog Mirror</title>
-  <link rel="stylesheet" href="./style.css?v=camera-start">
-  <script type="module" src="./app.js?v=camera-start"></script>
+  <link rel="stylesheet" href="./style.css?v=tap-drag">
+  <script type="module" src="./app.js?v=tap-drag"></script>
 </head>
 <body>
   <main class="studio">
@@ -20,6 +20,7 @@
     <div class="workspace">
       <section class="mirror" id="mirror-view" aria-label="Mirror preview">
         <canvas id="mirror" width="960" height="640" aria-label="Live mirror with fog and hand effects"></canvas>
+        <span class="fingertip-cursor" id="fingertip-cursor" aria-hidden="true" hidden></span>
         <div class="mirror-idle" id="idle">
           <button class="button primary" id="start-camera" type="button">enable your camera to start</button>
         </div>
@@ -74,9 +75,9 @@
           <h2>Gestures</h2>
           <ul>
             <li><span class="gesture-icon fog-icon" aria-hidden="true"></span><div><strong>Fog the mirror</strong><p>Open and move your mouth.</p></div></li>
-            <li><span class="gesture-icon line-icon" aria-hidden="true"></span><div><strong>Draw a line</strong><p>Point, then push your index finger toward the camera. Pull back to stop.</p></div></li>
-            <li><span class="gesture-icon print-icon" aria-hidden="true"></span><div><strong>Leave a handprint</strong><p>Fit your whole hand in view, spread your fingers, and hold briefly.</p></div></li>
-            <li><span class="gesture-icon sweep-icon" aria-hidden="true"></span><div><strong>Clear an area</strong><p>Bring your open hand closer to the camera, then wave.</p></div></li>
+            <li><span class="gesture-icon line-icon" aria-hidden="true"></span><div><strong>Draw dots and lines</strong><p>Aim with your index finger. Push and pull back in place for a dot, or push and drag sideways for a line.</p></div></li>
+            <li><span class="gesture-icon print-icon" aria-hidden="true"></span><div><strong>Leave a handprint</strong><p>Face your palm toward the camera, spread all five fingers, and hold your whole hand in view.</p></div></li>
+            <li><span class="gesture-icon sweep-icon" aria-hidden="true"></span><div><strong>Clear an area</strong><p>Bring your open palm closer to the camera, then wave with your palm facing it.</p></div></li>
           </ul>
         </section>
         <section class="panel capture" aria-labelledby="capture-title">

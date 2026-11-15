@@ -34,7 +34,15 @@ The app SHALL use the tracked mouth position, opening, and movement of one visib
 - **THEN** new fog stops appearing and existing fog remains visible before gradually fading out by 60 seconds
 
 ### Requirement: Fingertip wiping
-The app SHALL clear a fingertip-shaped mark and then a narrow line along its mirrored path after the user pushes an extended index finger toward the camera. Pulling back SHALL stop drawing while the finger is still extended.
+The app SHALL display a hover cursor at the tracked index fingertip. The app SHALL distinguish a press and release in place from a press followed by sideways movement, and leave a clear dot or a smooth line accordingly. Pulling back SHALL end the current mark while the finger is still extended.
+
+#### Scenario: Tap for a dot
+- **WHEN** the user pushes their index finger toward the camera and pulls it back without moving sideways beyond the jitter threshold
+- **THEN** one round dot appears on release
+
+#### Scenario: Aim between marks
+- **WHEN** the user moves their extended index finger at its resting depth
+- **THEN** the cursor follows the fingertip and the fog is untouched
 
 #### Scenario: Finger moves through fog
 - **WHEN** the user pushes an extended index fingertip toward the camera and then moves it across a fogged region
@@ -53,11 +61,15 @@ The app SHALL clear a fingertip-shaped mark and then a narrow line along its mir
 - **THEN** the app leaves the repositioning path untouched and waits for a new forward press
 
 ### Requirement: Open-hand silhouette
-The app SHALL leave one soft-edged, hand-shaped opening when the user holds a fully visible spread hand briefly and steadily in front of the camera. The opening SHALL reveal the live reflection and follow the same fog buildup and fading behavior as a fingertip line.
+The app SHALL leave one soft-edged, hand-shaped opening when the user holds a fully visible spread hand briefly and steadily with the palm facing the camera. The opening SHALL reveal the live reflection and follow the same fog buildup and fading behavior as a fingertip line.
 
 #### Scenario: Hold a spread hand in front of the fog
-- **WHEN** the camera clearly sees the spread fingers while the hand is held still
+- **WHEN** the camera clearly sees the palm, thumb, and spread fingers while the hand is held still
 - **THEN** the live reflection shows through a complete palm, thumb, and four fingers, with fog remaining between spread fingers
+
+#### Scenario: Show the back or edge of a hand
+- **WHEN** the user holds a spread hand with the back or edge facing the camera
+- **THEN** the app leaves no handprint and waits for a steady palm-facing pose
 
 #### Scenario: The hand crosses the mirror edge
 - **WHEN** the shape would be cut off at the mirror edge
@@ -65,7 +77,7 @@ The app SHALL leave one soft-edged, hand-shaped opening when the user holds a fu
 - **AND** the print remains briefly visible after the user lowers the hand
 
 #### Scenario: Hold a spread hand over clear glass
-- **WHEN** the user holds a spread hand over a clear part of the mirror
+- **WHEN** the user holds a spread palm facing the camera over a clear part of the mirror
 - **THEN** the mirror stays clear where there is no fog to wipe
 - **AND** holding the same pose continues to show a single print
 
@@ -75,7 +87,7 @@ The app SHALL leave one soft-edged, hand-shaped opening when the user holds a fu
 - **AND** the rest of the handprint remains clear
 
 #### Scenario: Wave and hold at normal distance
-- **WHEN** the user moves an open hand without bringing it closer, then holds it steadily in place
+- **WHEN** the user moves an open hand without bringing it closer, then holds it steadily with the palm facing the camera
 - **THEN** the app leaves one handprint at the held position
 - **AND** the movement leaves the fog intact before the hold
 
@@ -84,7 +96,8 @@ The app SHALL let the user adjust the white fog from dry mist to more transparen
 
 #### Scenario: Change density while fog is visible
 - **WHEN** the user moves the fog appearance slider from Dry toward Wet
-- **THEN** the haze becomes more transparent and stationary beads appear within it
+- **THEN** the haze becomes more transparent, with separate stationary beads around the middle of the range
+- **AND** more individual stationary beads appear as the slider approaches Wet
 - **AND** cleared lines, silhouettes, and areas reveal the live reflection through the condensation
 
 ### Requirement: Fullscreen mirror
@@ -95,7 +108,7 @@ The app SHALL offer fullscreen and return controls for the mirror. In fullscreen
 - **THEN** the mirror fills the display while fullscreen and returns to the normal layout on exit
 
 ### Requirement: Open-hand area clearing
-The app SHALL clear a broad area of fog when the user moves a tracked open hand closer to the camera and then waves it. The cleared width SHALL follow the apparent size of the hand.
+The app SHALL clear a broad area of fog when the user moves a tracked open palm closer to the camera and waves with the palm facing the camera. The cleared width SHALL follow the apparent size of the hand.
 
 #### Scenario: Wave across the fog
 - **WHEN** the user moves the open hand closer to the camera and sweeps it across a fogged region
@@ -110,3 +123,7 @@ The app SHALL clear a broad area of fog when the user moves a tracked open hand 
 #### Scenario: Tracking drops during a wave
 - **WHEN** the hand leaves tracking during a wave and reappears elsewhere
 - **THEN** the app waits for a fresh wave sequence and leaves the gap untouched
+
+#### Scenario: Turn the palm away during a wave
+- **WHEN** the camera sees the edge or back of the hand during a wave
+- **THEN** broad clearing stops and leaves the gap untouched until a palm-facing wave resumes
