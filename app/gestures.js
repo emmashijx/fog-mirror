@@ -1,3 +1,5 @@
+import { handDepth, calibrateIndex, updateIndex } from './index-pressure.js?v=pressure-v1';
+
 const fingers = [
   [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20],
 ];
@@ -16,6 +18,17 @@ function extension(points, joints) {
   return length ? distance3D(base, tip) / length : 0;
 }
 
+export function isSpreadHand(points) {
+  if (!points) return false;
+  const span = distance3D(points[5], points[17]);
+  return span > 0 &&
+    distance3D(points[8], points[20]) > span * 1.12 &&
+    [[8, 12], [12, 16], [16, 20]].every(([first, second]) =>
+      distance3D(points[first], points[second]) > span * 0.20) &&
+    extension(points, [1, 2, 3, 4]) > 0.65 &&
+    distance3D(points[4], points[5]) > span * 0.45;
+}
+
 export function classifyHand(points, drawing = false) {
   const [index, middle, ring, pinky] = fingers.map(joints => extension(points, joints));
   const spread = distance3D(points[8], points[20]) > distance3D(points[5], points[17]) * 1.12;
@@ -23,19 +36,9 @@ export function classifyHand(points, drawing = false) {
   const spreadOpen = spread && index > 0.78 && middle > 0.76 && ring > 0.70 && pinky > 0.59;
   if (open) return 'open';
   const curled = Number(middle < 0.82) + Number(ring < 0.82) + Number(pinky < 0.85);
-  if (index > (drawing ? 0.73 : 0.83) && curled >= 2) return 'point';
   if (spreadOpen) return 'open';
+  if (index > (drawing ? 0.73 : 0.83) && curled >= 2) return 'point';
   return 'other';
-}
-
-function handDepth(points) {
-  const [wrist, index, middle, pinky, tip] = [0, 5, 9, 17, 8].map(i => points[i]);
-  if (![wrist, index, middle, pinky, tip].every(point => Number.isFinite(point.z))) return null;
-  const palmScale = (distance3D(wrist, index) + distance3D(wrist, pinky) +
-    distance3D(wrist, middle) + distance3D(index, pinky)) / 4;
-  if (palmScale < 12) return null;
-  const palmDepth = (wrist.z + index.z + middle.z + pinky.z) / 4;
-  return { reach: (palmDepth - tip.z) / palmScale, scale: Math.log(palmScale) };
 }
 
 const fingertipWidth = size => Math.max(7, Math.min(18, size * 0.105));
@@ -52,10 +55,11 @@ export class MouthGesture {
     const previous = this.sample;
     const elapsed = previous ? timestamp - previous.timestamp : 0;
     const gap = !previous || elapsed > 320;
-    const smooth = gap ? opening : previous.opening * 0.55 + opening * 0.45;
-    const motion = gap ? 0 : Math.min(1, Math.abs(opening - previous.raw) * 6);
+    const smoothing = 1 - Math.exp(-elapsed / 70);
+    const smooth = gap ? opening : previous.opening + (opening - previous.opening) * smoothing;
+    const motion = gap ? 0 : Math.min(1, Math.abs(opening - previous.raw) * 250 / Math.max(1, elapsed));
     this.sample = {
-      center: gap ? center : mix(previous.center, center, 0.55),
+      center: gap ? center : mix(previous.center, center, 1 - Math.exp(-elapsed / 52)),
       opening: smooth,
       raw: opening,
       timestamp,
@@ -75,8 +79,52 @@ export class MouthGesture {
   }
 }
 
+export class ExpressionMouthGesture extends MouthGesture {
+  update(points, timestamp, expressions) {
+    if (!this.sample || timestamp - this.sample.timestamp > 320) {
+      this.expressionOpen = false;
+      this.pendingSince = null;
+    }
+    super.update(points, timestamp);
+    if (!this.sample || !Number.isFinite(expressions?.jawOpen) ||
+        !Number.isFinite(expressions?.mouthPucker) || !Number.isFinite(expressions?.mouthFunnel)) {
+      this.reset();
+      return null;
+    }
+    const expression = Math.max(expressions.jawOpen, expressions.mouthPucker * 0.65,
+      expressions.mouthFunnel * 0.8) * (1 - (expressions.mouthClose ?? 0) * 0.5);
+    const opening = this.sample.opening;
+    const active = opening > (this.expressionOpen ? 0.085 : 0.13) &&
+      expression > (this.expressionOpen ? 0.10 : 0.16);
+    if (!active) {
+      this.expressionOpen = false;
+      this.pendingSince = null;
+      return null;
+    }
+    this.pendingSince ??= timestamp;
+    if (!this.expressionOpen && timestamp - this.pendingSince < 120) return null;
+    this.expressionOpen = true;
+    const mouthWidth = Math.max(distance(points[61], points[291]), 6);
+    return {
+      center: this.sample.center,
+      radius: Math.min(235, Math.max(46, mouthWidth * 2.6)),
+      strength: Math.min(1, 0.1 + opening * 0.5 + expression * 0.5),
+    };
+  }
+
+  reset() {
+    super.reset();
+    this.expressionOpen = false;
+    this.pendingSince = null;
+  }
+}
+
 export class HandGesture {
-  update(pose, points, timestamp) {
+  update(pose, points, timestamp, allowPrint = isSpreadHand(points)) {
+    if (!points) {
+      this.reset();
+      return null;
+    }
     const previous = this.sample;
     // Keep a hold through one or two uncertain pose readings when the hand is still tracked.
     if (pose === 'other' && points && previous?.pose === 'open' && timestamp - previous.timestamp <= 125) return null;
@@ -140,59 +188,18 @@ export class HandGesture {
       return this.pointStroke(previous.tip, tip, size);
     }
 
-    return this.openHand(points, previous.palm, center, size, timestamp);
+    return this.openHand(points, previous.palm, center, size, timestamp, allowPrint);
   }
 
   setNeutralDepth(points, timestamp) {
-    this.neutralDepth = handDepth(points);
-    this.neutralSince = timestamp;
-    this.pointPressed = false;
-    this.pressSource = null;
-    this.pressSamples = 0;
-    this.releaseSamples = 0;
-    this.pointInterrupted = false;
+    calibrateIndex(this, points, timestamp);
   }
 
   indexPressed(points, timestamp) {
-    const depth = handDepth(points);
-    if (!depth && this.pointPressed && ++this.releaseSamples < 2) return null;
-    if (!depth || !this.neutralDepth) {
-      this.setNeutralDepth(points, timestamp);
-      return false;
-    }
-    const reach = depth.reach - this.neutralDepth.reach;
-    const scale = depth.scale - this.neutralDepth.scale;
-    const pressure = Math.max(reach, scale);
-    if (this.pointPressed) {
-      const held = this.pressSource === 'reach' ? reach : scale;
-      if (held >= 0.07) {
-        this.releaseSamples = 0;
-        return true;
-      }
-      if (++this.releaseSamples < 2) return null;
-      this.pointPressed = false;
-      this.pressSamples = 0;
-      return false;
-    }
-    // Calibrate at the starting depth before a forward movement can make a mark.
-    if (timestamp - this.neutralSince >= 100 && pressure >= 0.145) {
-      this.pressSamples++;
-      this.pointPressed = this.pressSamples >= 2;
-      if (this.pointPressed) {
-        this.pressSource = reach >= scale ? 'reach' : 'scale';
-        this.releaseSamples = 0;
-      }
-    } else {
-      this.pressSamples = 0;
-      if (pressure < 0.08) {
-        this.neutralDepth.reach += reach * 0.05;
-        this.neutralDepth.scale += scale * 0.05;
-      }
-    }
-    return this.pointPressed;
+    return updateIndex(this, points, timestamp);
   }
 
-  openHand(points, previous, center, size, timestamp) {
+  openHand(points, previous, center, size, timestamp, allowPrint) {
     const scale = handDepth(points)?.scale;
     this.openScale ??= scale;
     const approach = scale === undefined ? 0 : scale - this.openScale;
@@ -206,7 +213,6 @@ export class HandGesture {
       if (near) this.printed = false;
       return null;
     }
-    if (!near && scale !== undefined) this.openScale += approach * 0.04;
 
     // Let the hand move away from a fresh print before recognizing another hold.
     if (this.printed) {
@@ -246,7 +252,7 @@ export class HandGesture {
       return wave(this.sweepStart);
     }
 
-    if (!moving && rest >= (near ? 440 : 330)) {
+    if (allowPrint && !moving && rest >= (near ? 440 : 330)) {
       this.anchor = center;
       this.printSize = size;
       return { type: 'print', points };
@@ -271,6 +277,7 @@ export class HandGesture {
   }
 
   reset() {
+    this.pressMetrics = null;
     this.sample = null;
     this.stroke = null;
     this.pointPressed = false;
