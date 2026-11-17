@@ -113,7 +113,8 @@ export class Mirror {
   }
 
   fogAt({ center, radius, strength }, seconds) {
-    const opacity = Math.min(0.26, strength * seconds * 6);
+    const opacity = this.legacyFog ? Math.min(0.26, strength * seconds * 6) :
+      -Math.expm1(-strength * Math.max(0, seconds) * 6);
     if (opacity <= 0) return;
     if (this.sinceFog > MARK_FADE_START && this.sinceFog < MARK_LIFETIME) {
       this.reduceOpacity(this.fog, 1 - this.fogOpacity);

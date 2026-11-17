@@ -1,6 +1,6 @@
 const WORKER_TIMEOUT_MS = 18000;
 
-function startWorker(worker, signal) {
+function startWorker(worker, signal, mode) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => finish(false, new Error('Tracking took too long to start')), WORKER_TIMEOUT_MS);
     const abort = () => finish(false, signal.reason);
@@ -18,22 +18,26 @@ function startWorker(worker, signal) {
       finish(false, new Error(event.message || 'Tracking worker failed'));
     };
     worker.onmessage = ({ data }) => finish(data.type === 'ready', new Error(data.message));
-    worker.postMessage({ type: 'init' });
+    worker.postMessage({ type: 'init', mode });
   });
 }
 
-export async function createTracker(signal) {
+export async function createTracker(signal, mode = 'enhanced') {
   signal.throwIfAborted();
+  if (mode === 'fah') {
+    const { createFahTracker } = await import('./fah-tracker.js?v=fah-entry');
+    return createFahTracker(signal, () => createTracker(signal, 'fah-face'));
+  }
   let worker;
   try {
-    worker = new Worker(new URL('./tracking-worker.js', import.meta.url));
-    await startWorker(worker, signal);
+    worker = new Worker(new URL('./tracking-worker.js?v=fah-v1', import.meta.url));
+    await startWorker(worker, signal, mode);
     signal.throwIfAborted();
   } catch (error) {
     worker?.terminate();
     signal.throwIfAborted();
-    const { createVision } = await import('./vision.js');
-    const vision = await createVision();
+    const { createVision } = await import('./vision.js?v=fah-v1');
+    const vision = await createVision(mode);
     if (signal.aborted) {
       vision.close();
       signal.throwIfAborted();
