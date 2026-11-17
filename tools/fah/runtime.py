@@ -14,7 +14,7 @@ class Runtime:
         if self.device == "cuda" and not cuda_available:
             raise RuntimeError("CUDA 不可用；请使用 NVIDIA 环境，或在 Apple Silicon 上选择 --device mps。")
         if self.device == "mps" and not mps_available:
-            raise RuntimeError("MPS 不可用；请检查原生 arm64 Python、PyTorch 和 macOS。")
+            raise RuntimeError("MPS 不可用，当前进程无法使用 Metal GPU。请在 macOS 自带的终端用原生 arm64 Python 启动 FAH-S。")
         if self.device not in ("cuda", "mps", "cpu"):
             raise ValueError("Unknown device: " + str(self.device))
         self.sampled_peak = 0

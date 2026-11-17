@@ -1,4 +1,7 @@
-import { handDepth, calibrateIndex, updateIndex } from './index-pressure.js?v=pressure-v1';
+import { handDepth, calibrateIndex, updateIndex } from './index-pressure.js?v=fah-stroke';
+
+const HAND_SAMPLE_GAP = 320;
+export const FAH_STROKE_GAP = 520;
 
 const fingers = [
   [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20],
@@ -12,10 +15,10 @@ const mix = (a, b, amount) => ({
 });
 const distance3D = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
 
-function extension(points, joints) {
+function extension(points, joints, measure = distance3D) {
   const [base, middle, end, tip] = joints.map(index => points[index]);
-  const length = distance3D(base, middle) + distance3D(middle, end) + distance3D(end, tip);
-  return length ? distance3D(base, tip) / length : 0;
+  const length = measure(base, middle) + measure(middle, end) + measure(end, tip);
+  return length ? measure(base, tip) / length : 0;
 }
 
 export function isSpreadHand(points) {
@@ -41,7 +44,33 @@ export function classifyHand(points, drawing = false) {
   return 'other';
 }
 
+export function isProjectedIndex(points, drawing = false) {
+  if (!points || extension(points, fingers[0], distance) <= (drawing ? 0.73 : 0.83)) return false;
+  const wrist = points[0];
+  // A pointing tip extends past its knuckle while curled tips stay near or inside theirs.
+  const [index, ...others] = fingers.map(([base, , , tip]) =>
+    distance(wrist, points[tip]) / distance(wrist, points[base]));
+  return index > 1.3 && others.filter(reach => reach < 1.1).length >= 2;
+}
+
 const fingertipWidth = size => Math.max(7, Math.min(18, size * 0.105));
+
+function followsFastPoint(previous, palmMotion, tip, size, elapsed, interrupted) {
+  const handSize = Math.min(previous.size, size);
+  const palmTravel = Math.hypot(palmMotion.x, palmMotion.y);
+  const travelLimit = handSize * Math.min(3.7, 1.5 + elapsed / 110);
+  const tipDrift = Math.hypot(tip.x - previous.rawTip.x - palmMotion.x,
+    tip.y - previous.rawTip.y - palmMotion.y);
+  if (Math.max(previous.size, size) > handSize * 1.35 ||
+      palmTravel > travelLimit || tipDrift > handSize * 0.45) return false;
+  if (!interrupted) return true;
+  // After a gap, only a large move in the same direction can extend the old line.
+  const lastMotion = previous.palmMotion;
+  if (!lastMotion) return false;
+  const lastTravel = Math.hypot(lastMotion.x, lastMotion.y);
+  const alignment = lastMotion.x * palmMotion.x + lastMotion.y * palmMotion.y;
+  return lastTravel >= handSize * 0.22 && alignment >= 0.6 * lastTravel * palmTravel;
+}
 
 export class MouthGesture {
   update(points, timestamp) {
@@ -120,28 +149,44 @@ export class ExpressionMouthGesture extends MouthGesture {
 }
 
 export class HandGesture {
-  update(pose, points, timestamp, allowPrint = isSpreadHand(points)) {
+  constructor({ sparseSamples = false } = {}) {
+    this.sparseSamples = sparseSamples;
+  }
+
+  update(pose, points, timestamp, allowPrint = isSpreadHand(points), { predicted = false } = {}) {
     if (!points) {
       this.reset();
       return null;
     }
     const previous = this.sample;
-    // Keep a hold through one or two uncertain pose readings when the hand is still tracked.
-    if (pose === 'other' && points && previous?.pose === 'open' && timestamp - previous.timestamp <= 125) return null;
-    if (pose === 'other' && this.pointPressed && timestamp - previous.timestamp <= 135) {
+    const elapsed = previous ? Math.max(1, timestamp - previous.timestamp) : Infinity;
+    const sparseStroke = this.sparseSamples && this.pointPressed;
+    const maxGap = sparseStroke ? FAH_STROKE_GAP : HAND_SAMPLE_GAP;
+    // Keep a short hold during pose uncertainty or FAH's prediction-only frames.
+    if (pose === 'other' && previous?.pose === 'open' && elapsed <= 125) return null;
+    if (pose === 'other' && this.pointPressed &&
+        (sparseStroke ? (predicted || !this.pointInterrupted) && elapsed <= maxGap : elapsed <= 135)) {
       this.pointInterrupted = true;
       return null;
     }
-    if (!points || pose === 'other') {
+    if (pose === 'other') {
       this.reset();
       return null;
     }
     const palm = midpoint(points[0], points[9]);
     const size = Math.max(22, distance(points[5], points[17]) * 1.3, distance(points[0], points[9]));
-    if (!previous || previous.pose !== pose || timestamp - previous.timestamp > 320 ||
-        distance(palm, previous.palm) > size * 1.55) {
+    const rawTip = points[8];
+    const movement = previous ? distance(previous.rawTip, rawTip) : 0;
+    const interrupted = this.pointInterrupted || elapsed > HAND_SAMPLE_GAP;
+    const palmJump = previous && distance(palm, previous.palm) > size * 1.55;
+    const tipJump = movement > size * 1.6 || (sparseStroke && interrupted ?
+      movement > size * 0.85 : this.pointInterrupted && (movement > size * 0.6 || elapsed > 165));
+    const palmMotion = previous && { x: palm.x - previous.rawPalm.x, y: palm.y - previous.rawPalm.y };
+    const fastPoint = sparseStroke && pose === 'point' && elapsed <= maxGap && (palmJump || tipJump) &&
+      followsFastPoint(previous, palmMotion, rawTip, size, elapsed, interrupted);
+    if (!previous || previous.pose !== pose || elapsed > maxGap || (palmJump && !fastPoint)) {
       this.reset();
-      this.sample = { pose, palm, tip: points[8], rawTip: points[8], timestamp };
+      this.sample = { pose, palm, rawPalm: palm, size, tip: rawTip, rawTip, timestamp };
       this.anchor = palm;
       this.sweepStart = palm;
       this.steadySince = timestamp;
@@ -151,19 +196,16 @@ export class HandGesture {
     }
 
     const center = mix(previous.palm, palm, 0.72);
-    const elapsed = Math.max(1, timestamp - previous.timestamp);
-    const rawTip = points[8];
-    const movement = distance(previous.rawTip, rawTip);
     const rate = 4 + 20 * Math.min(1, movement / elapsed / (size / 75));
     const tip = mix(previous.tip, rawTip, 1 - Math.exp(-rate * elapsed / 1000));
-    this.sample = { pose, palm: center, tip, rawTip, timestamp };
+    this.sample = { pose, palm: center, rawPalm: palm, palmMotion, size, tip, rawTip, timestamp };
 
     if (pose === 'point') {
-      if (movement > size * 1.6 ||
-          (this.pointInterrupted && (movement > size * 0.6 || elapsed > 165))) {
+      if (tipJump && !fastPoint) {
         this.stroke = null;
         this.setNeutralDepth(points, timestamp);
         this.sample.tip = rawTip;
+        this.sample.palmMotion = null;
         return null;
       }
       this.pointInterrupted = false;
@@ -196,7 +238,7 @@ export class HandGesture {
   }
 
   indexPressed(points, timestamp) {
-    return updateIndex(this, points, timestamp);
+    return updateIndex(this, points, timestamp, { quickResponse: this.sparseSamples });
   }
 
   openHand(points, previous, center, size, timestamp, allowPrint) {
@@ -268,8 +310,8 @@ export class HandGesture {
       if (!previous) this.stroke = { control, end: from };
       return null;
     }
-    // Midpoints make the incoming and outgoing tangents match at every join.
-    const to = midpoint(control, tip);
+    // A join on the line between adjacent controls keeps both tangents aligned.
+    const to = mix(control, tip, this.sparseSamples ? 0.68 : 0.5);
     const brush = fingertipWidth(size);
     const width = previous?.width ? previous.width * 0.88 + brush * 0.12 : brush;
     this.stroke = { control: tip, end: to, width };

@@ -1,5 +1,6 @@
 import argparse
 from collections import deque
+from contextlib import suppress
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -18,6 +19,17 @@ from runtime import Runtime
 
 UPSTREAM = ROOT / ".local" / "FAH"
 sys.path.insert(0, str(UPSTREAM))
+
+
+def strongest_hand_detector(detector):
+    def detect(image):
+        boxes, scores, sides = detector(image)
+        if len(scores) <= 1:
+            return boxes, scores, sides
+        best = int(scores.argmax())
+        return boxes[best:best + 1], scores[best:best + 1], sides[best:best + 1]
+
+    return detect
 
 
 class Engine:
@@ -53,12 +65,18 @@ class Engine:
                 return
             from fah import FAH
 
+            # The mirror uses one hand. Skip extra proposals on the latency-sensitive MPS path.
+            options = {"det_size": 384, "vd_propose": False} if self.runtime.device == "mps" else {}
             self.model = FAH(
                 "fah-s", mode="video", device=self.runtime.device,
                 weights=str((DATA / "weights").relative_to(ROOT)),
                 sam3d=str((DATA / "sam-3d-body-dinov3").relative_to(ROOT)),
                 mesh="none", tips=False, parts=False, contact=False,
+                **options,
             )
+            if self.runtime.device == "mps":
+                method = self.model.method
+                method.detector = method.est.detector = strongest_hand_detector(method.detector)
             keypoint_head = self.model.method.est.model.keypoint_head
             if getattr(keypoint_head, "dense_vidx", None) is not None:
                 keypoint_head.dense_vidx = None
@@ -125,8 +143,10 @@ class Engine:
             self.samples.append(elapsed)
         height, width = image.shape[:2]
         hand = max(hands, key=lambda value: float(value.get("score", 0)), default=None)
-        result = {"hand": None, "handWorld": None, "tipCamera": None}
+        result = {"hand": None, "handWorld": None, "tipCamera": None, "handPredicted": False}
         if hand is not None:
+            # The upstream video refiner assigns zero score to frames filled from history.
+            result["handPredicted"] = float(hand.get("score", 1)) == 0
             joints = np.asarray(hand["joints3d"], dtype=np.float64)
             pixels = np.asarray(hand["joints2d"], dtype=np.float64)
             if joints.shape != (21, 3) or pixels.shape != (21, 2):
@@ -195,8 +215,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(payload)
+        # A canceled browser request must not turn a successful inference into a model error.
+        with suppress(BrokenPipeError, ConnectionResetError):
+            self.end_headers()
+            self.wfile.write(payload)
 
     def do_GET(self):
         path = urlparse(self.path).path

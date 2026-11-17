@@ -70,13 +70,15 @@ export class DebugOverlay {
     const threshold = value => Number.isFinite(value) ? value.toFixed(4) : '—';
     this.fields.pressure.textContent = pressure ?
       '前推：指尖 ' + format(pressure.reach) + ' · 手掌 ' + format(pressure.scale) :
-      '前推：— · 伸出食指以校准';
+      '前推：—';
     const source = pressure?.source === 'reach' ? '指尖深度' :
-      pressure?.source === 'scale' ? '手掌放大' : '等待校准';
-    this.fields.contact.textContent = '判定值 ' + format(pressure?.value) + ' · ' + source +
-      (pressure ? ' · ' + pressure.status : '');
+      pressure?.source === 'scale' ? '手掌放大' : null;
+    this.fields.contact.textContent = [
+      '判定值 ' + format(pressure?.value), source, pressure?.status ?? frame?.pressureHint,
+    ].filter(Boolean).join(' · ');
+    const confirmation = frame ? (frame.quickResponse ? ' · 强信号单帧，临界两帧' : ' · 连续 2 帧确认') : '';
     this.fields.thresholds.textContent = '按下 ≥ ' + threshold(this.thresholds?.press) +
-      ' · 抬起 < ' + threshold(this.thresholds?.release) + ' · 连续 2 帧确认';
+      ' · 抬起 < ' + threshold(this.thresholds?.release) + confirmation;
     this.fields.performance.hidden = !frame?.performance;
     this.fields.performance.textContent = frame?.performance ?? '';
     this.fields.depth.hidden = !frame?.performance;

@@ -1,6 +1,6 @@
-import { ExpressionMouthGesture, HandGesture, MouthGesture, classifyHand } from './gestures.js?v=pressure-v1';
+import { ExpressionMouthGesture, HandGesture, MouthGesture, classifyHand, isProjectedIndex } from './gestures.js?v=fah-fast-stroke';
 import * as legacy from './legacy-gestures.js?v=recognition-v1';
-import { calibrateIndex, updateIndex, indexThresholds } from './index-pressure.js?v=pressure-v1';
+import { calibrateIndex, updateIndex, indexThresholds } from './index-pressure.js?v=fah-stroke';
 
 class LegacyHandGesture extends legacy.HandGesture {
   setNeutralDepth(points, timestamp) {
@@ -8,7 +8,7 @@ class LegacyHandGesture extends legacy.HandGesture {
   }
 
   indexPressed(points, timestamp) {
-    return updateIndex(this, points, timestamp, true);
+    return updateIndex(this, points, timestamp, { adaptive: true });
   }
 
   reset() {
@@ -20,7 +20,7 @@ class LegacyHandGesture extends legacy.HandGesture {
 export const RECOGNITION_MODES = {
   fah: {
     label: 'FAH-S 本机实验',
-    description: '本机 CUDA / MPS 三维手部追踪 + 原画线规则 + 人脸表情系数。需运行 8766 验证服务；三维深度为模型估计。',
+    description: '本机 CUDA / MPS 三维手部追踪 + 原画线规则 + 人脸表情系数。请从本机 FAH-S 启动脚本显示的地址打开；三维深度为模型估计。',
   },
   enhanced: {
     label: '模型增强版',
@@ -48,16 +48,20 @@ export function resolveHandPose(points, gesture, drawing = false) {
 
 export function createInteraction(mode, sensitivity = 1) {
   if (!Object.hasOwn(RECOGNITION_MODES, mode)) throw new Error('Unknown recognition mode');
-  const hand = mode === 'original' ? new LegacyHandGesture() : new HandGesture();
+  const hand = mode === 'original' ? new LegacyHandGesture() : new HandGesture({ sparseSamples: mode === 'fah' });
   hand.sensitivity = indexThresholds(sensitivity).sensitivity;
   return {
     hand,
     mouth: mode === 'original' ? new legacy.MouthGesture() :
       mode === 'enhanced' || mode === 'fah' ? new ExpressionMouthGesture() : new MouthGesture(),
-    classify(points, gesture, drawing) {
+    classify(points, gesture, drawing, projectedPoints) {
       if (!points) return { pose: 'other', source: 'none' };
       if (mode === 'enhanced') return resolveHandPose(points, gesture, drawing);
-      return { pose: (mode === 'original' ? legacy.classifyHand : classifyHand)(points, drawing), source: 'rules' };
+      const pose = (mode === 'original' ? legacy.classifyHand : classifyHand)(points, drawing);
+      if (mode === 'fah' && pose === 'other' && isProjectedIndex(projectedPoints, drawing)) {
+        return { pose: 'point', source: 'projection' };
+      }
+      return { pose, source: 'rules' };
     },
   };
 }

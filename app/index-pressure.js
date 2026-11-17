@@ -29,7 +29,7 @@ export function calibrateIndex(state, points, timestamp) {
     { timestamp, reach: 0, scale: 0, value: 0, source: null, status: '校准中 · 保持起始距离 100 ms' } : null;
 }
 
-export function updateIndex(state, points, timestamp, adaptive = false) {
+export function updateIndex(state, points, timestamp, { adaptive = false, quickResponse = false } = {}) {
   const depth = handDepth(points);
   state.pressMetrics = null;
   if (!depth && state.pointPressed && ++state.releaseSamples < 2) return null;
@@ -52,7 +52,9 @@ export function updateIndex(state, points, timestamp, adaptive = false) {
       metrics.status = '按下 · 保持中';
       return true;
     }
-    if (++state.releaseSamples < 2) {
+    const returnedToNeutral = quickResponse && held <= thresholds.release * 0.5 &&
+      pressure < thresholds.release;
+    if (!returnedToNeutral && ++state.releaseSamples < 2) {
       metrics.status = '抬起确认 1/2';
       return null;
     }
@@ -63,7 +65,7 @@ export function updateIndex(state, points, timestamp, adaptive = false) {
   }
   if (timestamp - state.neutralSince >= 100 && pressure >= thresholds.press) {
     state.pressSamples++;
-    state.pointPressed = state.pressSamples >= 2;
+    state.pointPressed = state.pressSamples >= 2 || (quickResponse && pressure >= thresholds.press * 1.5);
     if (state.pointPressed) {
       state.pressSource = source;
       state.releaseSamples = 0;

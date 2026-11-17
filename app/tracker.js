@@ -25,7 +25,7 @@ function startWorker(worker, signal, mode) {
 export async function createTracker(signal, mode = 'enhanced') {
   signal.throwIfAborted();
   if (mode === 'fah') {
-    const { createFahTracker } = await import('./fah-tracker.js?v=fah-v1');
+    const { createFahTracker } = await import('./fah-tracker.js?v=fah-entry');
     return createFahTracker(signal, () => createTracker(signal, 'fah-face'));
   }
   let worker;

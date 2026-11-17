@@ -1,11 +1,12 @@
-import { isSpreadHand } from './gestures.js?v=pressure-v1';
-import { createInteraction, RECOGNITION_MODES } from './recognition.js?v=fah-v3';
+import { FAH_STROKE_GAP, isSpreadHand } from './gestures.js?v=fah-fast-stroke';
+import { createInteraction, RECOGNITION_MODES } from './recognition.js?v=fah-fast-stroke';
 import { formatFahMemory } from './fah-metrics.js?v=fah-v3';
+import { fetchFahHealth } from './fah-tracker.js?v=fah-entry';
 import { Mirror } from './mirror.js?v=recognition-v1';
 import { MirrorRecorder, captureCanvas, drawCapture, mirrorCrop } from './recording.js?v=mp4';
-import { createTracker } from './tracker.js?v=fah-v1';
-import { DebugOverlay } from './debug-overlay.js?v=fah-v1';
-import { indexThresholds } from './index-pressure.js?v=pressure-v1';
+import { createTracker } from './tracker.js?v=fah-entry';
+import { DebugOverlay } from './debug-overlay.js?v=fah-stroke';
+import { indexThresholds } from './index-pressure.js?v=fah-stroke';
 
 const INFERENCE_INTERVAL = 42;
 const STALE_LANDMARKS = 320;
@@ -58,6 +59,8 @@ const resetSensitivity = element('reset-sensitivity');
 const fahDetails = element('fah-details');
 const fahHealth = element('fah-health');
 const fahPerformance = element('fah-performance');
+const fahReport = element('fah-report');
+let fahHealthRequest;
 const mirror = new Mirror(element('mirror'));
 const debug = new DebugOverlay(element('debug-overlay'), element('debug-status'));
 const recorder = new MirrorRecorder(mirror.canvas, updateRecording);
@@ -274,6 +277,7 @@ async function loadTracking(session) {
   session.busy = false;
   session.fog = null;
   session.lastResult = -Infinity;
+  session.lastResultReceived = -Infinity;
   session.lastInference = -Infinity;
   session.stale = false;
   session.dropped = 0;
@@ -300,6 +304,7 @@ async function loadTracking(session) {
     session.tracker = tracker;
     trackingReading.textContent = '已加载，等待画面';
     setStatus('Camera ready', 'live');
+    if (session.mode === 'fah') refreshFahHealth();
   } catch (error) {
     if (camera === session && !controller.signal.aborted) trackingError(error);
   }
@@ -321,18 +326,22 @@ function render(session, timestamp) {
   const seconds = Math.max(0, (timestamp - (session.lastFrame ?? timestamp)) / 1000);
   session.lastFrame = timestamp;
   mirror.fade(seconds);
-  if (Number.isFinite(session.lastResult) && timestamp - session.lastResult >= STALE_LANDMARKS && !session.stale) {
+  const fah = session.mode === 'fah';
+  const lastUpdate = fah ? session.lastResultReceived : session.lastResult;
+  const resultAge = timestamp - lastUpdate;
+  if (Number.isFinite(lastUpdate) && resultAge >= STALE_LANDMARKS && !session.stale) {
     session.stale = true;
     session.fog = null;
-    session.hand.reset();
+    if (!fah || !session.hand.pointPressed) session.hand.reset();
     session.mouth.reset();
-    debug.clear('追踪结果已过期，等待新画面');
+    debug.clear(session.dropped ? '识别结果超时，等待新画面' : '追踪结果已过期，等待新画面');
     liveState.textContent = 'Live mirror';
     handReading.textContent = '等待新画面';
     mouthReading.textContent = '等待新画面';
     trackingReading.textContent = '画面已过期，已暂停交互';
     setStatus('Tracking paused. Waiting for a fresh frame…', 'loading');
   }
+  if (fah && session.hand.pointPressed && resultAge >= FAH_STROKE_GAP) session.hand.reset();
   if (session.fog && timestamp - session.lastResult < STALE_LANDMARKS) {
     mirror.fogAt(session.fog, session.mode === 'original' ? Math.min(seconds, 0.1) : seconds);
   }
@@ -351,18 +360,36 @@ function render(session, timestamp) {
   session.animation = requestAnimationFrame(next => render(session, next));
 }
 
+function fahMeasurementLabel(metrics, fps) {
+  const model = metrics.modelFps?.toFixed(1) ?? '预热中';
+  return '有效追踪 ' + (fps?.toFixed(1) ?? '—') + ' FPS · 模型 ' + model +
+    ' FPS · ' + formatFahMemory(metrics);
+}
+
 async function infer(session, timestamp) {
   const controller = session.trackingController;
   session.busy = true;
   try {
-    const { face, hand, handWorld, gesture, expressions, metrics, tipCamera } =
+    const { face, hand, handWorld, handPredicted, gesture, expressions, metrics, tipCamera } =
       await session.tracker.detect(mirror.captureFrame(video), timestamp);
     if (camera !== session || controller.signal.aborted) return;
-    const elapsed = performance.now() - timestamp;
+    const received = performance.now();
+    const elapsed = received - timestamp;
     if (elapsed > STALE_LANDMARKS) {
       session.dropped++;
       trackingReading.textContent = Math.round(elapsed) + ' ms · 已丢弃过期结果';
-      if (session.dropped >= 3) setStatus('Tracking is too slow. Try the landmark rules mode.', 'loading');
+      if (session.stale || !Number.isFinite(session.lastResult)) {
+        debug.clear('识别结果超时（' + Math.round(elapsed) + ' ms），等待新画面');
+      }
+      if (metrics) {
+        fahPerformance.textContent = fahMeasurementLabel(metrics, null) +
+          ' · 样本 ' + metrics.sampleCount + ' · 本帧超过 ' + STALE_LANDMARKS + ' ms，未用于绘画';
+      }
+      if (session.dropped >= 3) {
+        setStatus(session.mode === 'fah'
+          ? 'FAH-S 已返回结果，但连续超时，镜面交互已暂停。可切换到仅修复版。'
+          : 'Tracking is too slow. Try the landmark rules mode.', 'loading');
+      }
       return;
     }
     session.dropped = 0;
@@ -371,14 +398,18 @@ async function infer(session, timestamp) {
     const points = face && Object.fromEntries(Object.entries(face).map(([i, point]) => [i, mirror.toMirror(point)]));
     session.fog = session.mouth.update(points, timestamp, expressions);
     session.lastResult = timestamp;
+    session.lastResultReceived = received;
     const pointsInMirror = hand?.map(point => mirror.toMirror(point));
-    const { pose, source } = session.classify(handWorld ?? hand, gesture, session.hand.pointPressed);
+    const { pose, source } = handPredicted ? { pose: 'other', source: 'none' } :
+      session.classify(handWorld ?? hand, gesture, session.hand.pointPressed, pointsInMirror);
     const view = visibleCrop();
-    const outside = pointsInMirror && (pose === 'point' || session.hand.pointPressed) &&
+    const outside = pointsInMirror && !handPredicted && (pose === 'point' || session.hand.pointPressed) &&
       !mirror.inDrawingArea(pointsInMirror[8], view);
     if (outside) session.hand.reset();
-    const action = outside ? null : session.hand.update(pose, pointsInMirror, timestamp, isSpreadHand(handWorld ?? hand));
-    const label = session.hand.pointPressed ? 'Drawing' : 'Live mirror';
+    const action = outside ? null : session.hand.update(pose, pointsInMirror, timestamp,
+      isSpreadHand(handWorld ?? hand), { predicted: handPredicted });
+    const pausedStroke = session.mode === 'fah' && session.hand.pointInterrupted;
+    const label = session.hand.pointPressed && !pausedStroke ? 'Drawing' : 'Live mirror';
     if (liveState.textContent !== label) liveState.textContent = label;
     if (action?.type === 'print') session.hand.printed = mirror.stamp(action.points, view);
     else if (action) mirror.wipe(action);
@@ -386,7 +417,9 @@ async function infer(session, timestamp) {
       Open_Palm: '张手', Pointing_Up: '食指向上', Closed_Fist: '握拳', Thumb_Up: '点赞',
       Thumb_Down: '拇指向下', Victory: '胜利手势', ILoveYou: '爱你手势', None: '未确认',
     };
-    const state = outside ? '移入镜面中央' : session.hand.pointPressed ? '正在画线' :
+    const state = outside ? '移入镜面中央' : pausedStroke ? '笔画暂停 · 等待下一帧' :
+      handPredicted ? '暂未检测到手' :
+      session.hand.pointPressed ? '正在画线' :
       session.hand.clearing ? '挥擦中' : session.hand.printed ? '已留手印' :
       pose === 'point' ? '食指前推可画线' : pose === 'open' ? '张手' : '其他姿势';
     const modelLabel = gesture ? (names[gesture.name] ?? gesture.name) + ' ' + Math.round(gesture.score * 100) + '%' : '';
@@ -404,25 +437,27 @@ async function infer(session, timestamp) {
     trackingReading.textContent = Math.round(elapsed) + ' ms · ' + (fps?.toFixed(1) ?? '—') + ' FPS';
     let performanceLabel = null;
     if (metrics) {
-      const model = metrics.modelFps?.toFixed(1) ?? '预热中';
-      performanceLabel = '有效追踪 ' + (fps?.toFixed(1) ?? '—') + ' FPS · 模型 ' + model +
-        ' FPS · ' + formatFahMemory(metrics);
+      performanceLabel = fahMeasurementLabel(metrics, fps);
       fahPerformance.textContent = performanceLabel + ' · 样本 ' + metrics.sampleCount;
     }
     debug.update({
-      timestamp,
+      timestamp: session.mode === 'fah' ? received : timestamp,
       mode: RECOGNITION_MODES[session.mode].label,
-      points: pointsInMirror ?? null,
+      points: handPredicted ? null : pointsInMirror ?? null,
       brush: action?.type === 'line' ? action.to : session.hand.stroke?.end ?? null,
       pressed: Boolean(session.hand.pointPressed),
+      quickResponse: session.mode === 'fah',
       pressure: session.hand.pressMetrics?.timestamp === timestamp ? session.hand.pressMetrics : null,
+      pressureHint: !hand || handPredicted ? '等待手部实测关键点' : outside ? '将食指移入镜面中央' :
+        pose === 'point' ? '等待有效的手部深度' : '伸出食指，收起其他手指',
       action: !hand ? '未检测到手' : state,
-      recognition: !hand ? '未检测到手' : [modelLabel, source === 'model' ? '模型分类' :
+      recognition: handPredicted ? '模型补帧 · 暂停绘画' : !hand ? '未检测到手' :
+        [modelLabel, source === 'projection' ? '画面关键点辅助' : source === 'model' ? '模型分类' :
         session.mode === 'enhanced' ? '规则辅助' : '关键点规则'].filter(Boolean).join(' · '),
       fog: Boolean(session.fog),
       elapsed,
       performance: performanceLabel,
-      tipCamera,
+      tipCamera: handPredicted ? null : tipCamera,
     });
   } catch (error) {
     if (camera !== session || controller.signal.aborted) return;
@@ -473,19 +508,28 @@ resetSensitivity.addEventListener('click', () => {
   updateSensitivity();
 });
 
+async function refreshFahHealth() {
+  fahHealthRequest?.abort();
+  fahReport.hidden = true;
+  if (recognitionMode.value !== 'fah') return;
+  const controller = new AbortController();
+  fahHealthRequest = controller;
+  fahHealth.textContent = '正在检查本机服务';
+  try {
+    const health = await fetchFahHealth(AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]));
+    if (controller.signal.aborted) return;
+    fahHealth.textContent = health.message;
+    fahReport.hidden = health.state !== 'ready';
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    fahHealth.textContent = error.name === 'TimeoutError' ? '本机 FAH-S 服务检查超时，请查看终端。' : error.message;
+  }
+}
+
 function updateRecognitionMode() {
   recognitionDescription.textContent = RECOGNITION_MODES[recognitionMode.value].description;
   fahDetails.hidden = recognitionMode.value !== 'fah';
-  if (!fahDetails.hidden) {
-    fahHealth.textContent = '正在检查本机服务';
-    fetch('/api/fah/health', { signal: AbortSignal.timeout(5000) })
-      .then(response => {
-        if (!response.ok) throw new Error('请从 http://127.0.0.1:8766/ 打开 FAH 验证入口');
-        return response.json();
-      })
-      .then(health => { fahHealth.textContent = health.message; })
-      .catch(error => { fahHealth.textContent = error.message; });
-  }
+  void refreshFahHealth();
   if (!camera?.playing) debug.clear('等待摄像头', RECOGNITION_MODES[recognitionMode.value].label);
 }
 recognitionMode.addEventListener('change', () => {
