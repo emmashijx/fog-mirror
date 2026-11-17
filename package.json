@@ -1,0 +1,10 @@
+{
+  "name": "fog-mirror",
+  "private": true,
+  "scripts": {
+    "build": "node tools/build-release.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.3"
+  }
+}

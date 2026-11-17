@@ -2,7 +2,7 @@ import { ExpressionMouthGesture, HandGesture, MouthGesture, classifyHand, isProj
 import * as legacy from './legacy-gestures.js?v=recognition-v1';
 import { calibrateIndex, updateIndex, indexThresholds } from './index-pressure.js?v=fah-stroke';
 
-class LegacyHandGesture extends legacy.HandGesture {
+const LegacyHandGesture = import.meta.release ? null : class extends legacy.HandGesture {
   setNeutralDepth(points, timestamp) {
     calibrateIndex(this, points, timestamp);
   }
@@ -15,7 +15,7 @@ class LegacyHandGesture extends legacy.HandGesture {
     super.reset();
     this.pressMetrics = null;
   }
-}
+};
 
 export const RECOGNITION_MODES = {
   fah: {
@@ -47,16 +47,16 @@ export function resolveHandPose(points, gesture, drawing = false) {
 }
 
 export function createInteraction(mode, sensitivity = 1) {
-  if (!Object.hasOwn(RECOGNITION_MODES, mode)) throw new Error('Unknown recognition mode');
-  const hand = mode === 'original' ? new LegacyHandGesture() : new HandGesture({ sparseSamples: mode === 'fah' });
+  if (!import.meta.release && !Object.hasOwn(RECOGNITION_MODES, mode)) throw new Error('Unknown recognition mode');
+  const hand = !import.meta.release && mode === 'original' ? new LegacyHandGesture() :
+    new HandGesture({ sparseSamples: !import.meta.release && mode === 'fah' });
   hand.sensitivity = indexThresholds(sensitivity).sensitivity;
   return {
     hand,
-    mouth: mode === 'original' ? new legacy.MouthGesture() :
-      mode === 'enhanced' || mode === 'fah' ? new ExpressionMouthGesture() : new MouthGesture(),
-    classify(points, gesture, drawing, projectedPoints) {
+    mouth: !import.meta.release && mode === 'original' ? new legacy.MouthGesture() :
+      import.meta.release || mode === 'enhanced' || mode === 'fah' ? new ExpressionMouthGesture() : new MouthGesture(),
+    classify: import.meta.release || mode === 'enhanced' ? resolveHandPose : (points, gesture, drawing, projectedPoints) => {
       if (!points) return { pose: 'other', source: 'none' };
-      if (mode === 'enhanced') return resolveHandPose(points, gesture, drawing);
       const pose = (mode === 'original' ? legacy.classifyHand : classifyHand)(points, drawing);
       if (mode === 'fah' && pose === 'other' && isProjectedIndex(projectedPoints, drawing)) {
         return { pose: 'point', source: 'projection' };

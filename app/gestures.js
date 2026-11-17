@@ -150,7 +150,7 @@ export class ExpressionMouthGesture extends MouthGesture {
 
 export class HandGesture {
   constructor({ sparseSamples = false } = {}) {
-    this.sparseSamples = sparseSamples;
+    if (!import.meta.release) this.sparseSamples = sparseSamples;
   }
 
   update(pose, points, timestamp, allowPrint = isSpreadHand(points), { predicted = false } = {}) {
@@ -160,7 +160,7 @@ export class HandGesture {
     }
     const previous = this.sample;
     const elapsed = previous ? Math.max(1, timestamp - previous.timestamp) : Infinity;
-    const sparseStroke = this.sparseSamples && this.pointPressed;
+    const sparseStroke = !import.meta.release && this.sparseSamples && this.pointPressed;
     const maxGap = sparseStroke ? FAH_STROKE_GAP : HAND_SAMPLE_GAP;
     // Keep a short hold during pose uncertainty or FAH's prediction-only frames.
     if (pose === 'other' && previous?.pose === 'open' && elapsed <= 125) return null;
@@ -182,7 +182,7 @@ export class HandGesture {
     const tipJump = movement > size * 1.6 || (sparseStroke && interrupted ?
       movement > size * 0.85 : this.pointInterrupted && (movement > size * 0.6 || elapsed > 165));
     const palmMotion = previous && { x: palm.x - previous.rawPalm.x, y: palm.y - previous.rawPalm.y };
-    const fastPoint = sparseStroke && pose === 'point' && elapsed <= maxGap && (palmJump || tipJump) &&
+    const fastPoint = !import.meta.release && sparseStroke && pose === 'point' && elapsed <= maxGap && (palmJump || tipJump) &&
       followsFastPoint(previous, palmMotion, rawTip, size, elapsed, interrupted);
     if (!previous || previous.pose !== pose || elapsed > maxGap || (palmJump && !fastPoint)) {
       this.reset();
@@ -238,7 +238,7 @@ export class HandGesture {
   }
 
   indexPressed(points, timestamp) {
-    return updateIndex(this, points, timestamp, { quickResponse: this.sparseSamples });
+    return updateIndex(this, points, timestamp, { quickResponse: !import.meta.release && this.sparseSamples });
   }
 
   openHand(points, previous, center, size, timestamp, allowPrint) {
@@ -311,7 +311,7 @@ export class HandGesture {
       return null;
     }
     // A join on the line between adjacent controls keeps both tangents aligned.
-    const to = mix(control, tip, this.sparseSamples ? 0.68 : 0.5);
+    const to = mix(control, tip, !import.meta.release && this.sparseSamples ? 0.68 : 0.5);
     const brush = fingertipWidth(size);
     const width = previous?.width ? previous.width * 0.88 + brush * 0.12 : brush;
     this.stroke = { control: tip, end: to, width };
@@ -319,7 +319,7 @@ export class HandGesture {
   }
 
   reset() {
-    this.pressMetrics = null;
+    if (!import.meta.release) this.pressMetrics = null;
     this.sample = null;
     this.stroke = null;
     this.pointPressed = false;

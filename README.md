@@ -25,6 +25,25 @@ In the three browser modes, camera frames, tracking, and clips stay in the brows
 The optional FAH mode sends JPEG frames to a service on this computer's loopback address;
 the service does not save camera frames by default. The bundled runtime is MediaPipe Tasks Vision 0.10.21 with the version 1 Face Landmarker and Hand Landmarker models. See [MediaPipe](https://github.com/google-ai-edge/mediapipe) for the upstream project and Apache 2.0 license.
 
+## Production release
+
+On `main`, build the public site with Node.js and npm.
+
+```sh
+npm ci
+npm run build
+python3 -m http.server 8769 --bind 127.0.0.1 --directory dist
+```
+
+Preview at [http://127.0.0.1:8769/](http://127.0.0.1:8769/). Publish the contents of
+`dist/` to a static HTTPS host. The production site uses the enhanced
+Gesture Recognizer and Face Landmarker blendshapes. It includes fog, drawing,
+handprints, wiping, fullscreen, JPG photos, and MP4 recording.
+
+To build from GitHub, run **Build Fog Mirror release** under **Actions** on
+`main` and download the **fog-mirror-production** artifact. The same source
+runs with all four modes and the debug overlay via `python3 tools/start.py`.
+
 ## Recognition comparison
 
 The **识别方案对比** panel offers three browser modes, plus the optional local FAH mode described below:

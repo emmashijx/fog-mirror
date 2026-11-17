@@ -25,13 +25,15 @@ export function calibrateIndex(state, points, timestamp) {
   state.pressSamples = 0;
   state.releaseSamples = 0;
   state.pointInterrupted = false;
-  state.pressMetrics = state.neutralDepth ?
-    { timestamp, reach: 0, scale: 0, value: 0, source: null, status: '校准中 · 保持起始距离 100 ms' } : null;
+  if (!import.meta.release) {
+    state.pressMetrics = state.neutralDepth ?
+      { timestamp, reach: 0, scale: 0, value: 0, source: null, status: '校准中 · 保持起始距离 100 ms' } : null;
+  }
 }
 
 export function updateIndex(state, points, timestamp, { adaptive = false, quickResponse = false } = {}) {
   const depth = handDepth(points);
-  state.pressMetrics = null;
+  if (!import.meta.release) state.pressMetrics = null;
   if (!depth && state.pointPressed && ++state.releaseSamples < 2) return null;
   if (!depth || !state.neutralDepth) {
     calibrateIndex(state, points, timestamp);
@@ -44,23 +46,23 @@ export function updateIndex(state, points, timestamp, { adaptive = false, quickR
   const wasPressed = state.pointPressed;
   const source = wasPressed ? state.pressSource : reach >= scale ? 'reach' : 'scale';
   const held = source === 'reach' ? reach : scale;
-  const metrics = { timestamp, reach, scale, value: wasPressed ? held : pressure, source };
-  state.pressMetrics = metrics;
+  const metrics = !import.meta.release && { timestamp, reach, scale, value: wasPressed ? held : pressure, source };
+  if (!import.meta.release) state.pressMetrics = metrics;
   if (wasPressed) {
     if (held >= thresholds.release) {
       state.releaseSamples = 0;
-      metrics.status = '按下 · 保持中';
+      if (!import.meta.release) metrics.status = '按下 · 保持中';
       return true;
     }
     const returnedToNeutral = quickResponse && held <= thresholds.release * 0.5 &&
       pressure < thresholds.release;
     if (!returnedToNeutral && ++state.releaseSamples < 2) {
-      metrics.status = '抬起确认 1/2';
+      if (!import.meta.release) metrics.status = '抬起确认 1/2';
       return null;
     }
     state.pointPressed = false;
     state.pressSamples = 0;
-    metrics.status = '已抬起';
+    if (!import.meta.release) metrics.status = '已抬起';
     return false;
   }
   if (timestamp - state.neutralSince >= 100 && pressure >= thresholds.press) {
@@ -70,11 +72,11 @@ export function updateIndex(state, points, timestamp, { adaptive = false, quickR
       state.pressSource = source;
       state.releaseSamples = 0;
     }
-    metrics.status = state.pointPressed ? '按下 · 保持中' : '按下确认 1/2';
+    if (!import.meta.release) metrics.status = state.pointPressed ? '按下 · 保持中' : '按下确认 1/2';
   } else {
     state.pressSamples = 0;
     const calibrating = timestamp - state.neutralSince < 100;
-    metrics.status = calibrating ? '校准中 · 保持起始距离 100 ms' : '抬起 · 等待前推';
+    if (!import.meta.release) metrics.status = calibrating ? '校准中 · 保持起始距离 100 ms' : '抬起 · 等待前推';
     if (pressure < thresholds.adapt && (adaptive || calibrating)) {
       state.neutralDepth.reach += reach * 0.05;
       state.neutralDepth.scale += scale * 0.05;

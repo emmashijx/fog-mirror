@@ -45,24 +45,24 @@ const stopVideo = element('stop-video');
 const downloadPhoto = element('download-photo');
 const downloadFullscreen = element('download-fullscreen');
 const cameraMessage = element('camera-message');
-const recognitionMode = element('recognition-mode');
-const recognitionDescription = element('recognition-description');
-const handReading = element('hand-reading');
-const mouthReading = element('mouth-reading');
-const trackingReading = element('tracking-reading');
 const resetInteraction = element('reset-interaction');
-const debugEnabled = element('debug-enabled');
-const debugToggle = element('debug-toggle');
-const indexSensitivity = element('index-sensitivity');
-const indexSensitivityValue = element('index-sensitivity-value');
-const resetSensitivity = element('reset-sensitivity');
-const fahDetails = element('fah-details');
-const fahHealth = element('fah-health');
-const fahPerformance = element('fah-performance');
-const fahReport = element('fah-report');
+const recognitionMode = !import.meta.release && element('recognition-mode');
+const recognitionDescription = !import.meta.release && element('recognition-description');
+const handReading = !import.meta.release && element('hand-reading');
+const mouthReading = !import.meta.release && element('mouth-reading');
+const trackingReading = !import.meta.release && element('tracking-reading');
+const debugEnabled = !import.meta.release && element('debug-enabled');
+const debugToggle = !import.meta.release && element('debug-toggle');
+const indexSensitivity = !import.meta.release && element('index-sensitivity');
+const indexSensitivityValue = !import.meta.release && element('index-sensitivity-value');
+const resetSensitivity = !import.meta.release && element('reset-sensitivity');
+const fahDetails = !import.meta.release && element('fah-details');
+const fahHealth = !import.meta.release && element('fah-health');
+const fahPerformance = !import.meta.release && element('fah-performance');
+const fahReport = !import.meta.release && element('fah-report');
 let fahHealthRequest;
 const mirror = new Mirror(element('mirror'));
-const debug = new DebugOverlay(element('debug-overlay'), element('debug-status'));
+const debug = !import.meta.release && new DebugOverlay(element('debug-overlay'), element('debug-status'));
 const recorder = new MirrorRecorder(mirror.canvas, updateRecording);
 let camera;
 let photoUrl;
@@ -91,7 +91,7 @@ function updateFullscreen() {
   fullscreen.title = active ? 'Exit fullscreen' : 'Enter fullscreen';
   fullscreenMessage.textContent = '';
   camera?.hand?.reset();
-  debug.clear(camera?.playing ? '视图已切换，等待新手势' : '等待摄像头');
+  if (!import.meta.release) debug.clear(camera?.playing ? '视图已切换，等待新手势' : '等待摄像头');
 }
 
 function expandMirror(active) {
@@ -153,11 +153,13 @@ function updateCamera() {
   start.disabled = Boolean(camera);
   stop.hidden = !camera?.stream;
   resetInteraction.disabled = !camera?.playing;
-  debugToggle.hidden = !camera?.playing;
-  if (!camera) {
-    handReading.textContent = '等待摄像头';
-    mouthReading.textContent = '等待摄像头';
-    trackingReading.textContent = '尚未启动';
+  if (!import.meta.release) {
+    debugToggle.hidden = !camera?.playing;
+    if (!camera) {
+      handReading.textContent = '等待摄像头';
+      mouthReading.textContent = '等待摄像头';
+      trackingReading.textContent = '尚未启动';
+    }
   }
   updateRecording();
 }
@@ -203,7 +205,7 @@ function finishCamera(message = 'Camera off', state = 'idle') {
   session.stream?.getTracks().forEach(track => track.stop());
   video.srcObject = null;
   mirror.clear();
-  debug.clear('等待摄像头');
+  if (!import.meta.release) debug.clear('等待摄像头');
   start.textContent = state === 'error' ? 'Retry camera' : startLabel;
   setStatus(message, state);
   updateCamera();
@@ -281,19 +283,21 @@ async function loadTracking(session) {
   session.lastInference = -Infinity;
   session.stale = false;
   session.dropped = 0;
-  session.acceptedTimes = [];
-  session.mode = recognitionMode.value;
-  debug.clear('正在加载模型', RECOGNITION_MODES[session.mode].label);
-  Object.assign(session, createInteraction(session.mode, indexSensitivity.valueAsNumber));
+  session.mode = !import.meta.release ? recognitionMode.value : 'enhanced';
+  Object.assign(session, createInteraction(session.mode, !import.meta.release ? indexSensitivity.valueAsNumber : 1));
   const controller = new AbortController();
   session.trackingController = controller;
-  mirror.legacyFog = session.mode === 'original';
+  mirror.legacyFog = !import.meta.release && session.mode === 'original';
   mirror.clear();
   liveState.textContent = 'Live mirror';
-  handReading.textContent = '正在加载';
-  mouthReading.textContent = '正在加载';
-  trackingReading.textContent = '正在加载模型';
-  fahPerformance.textContent = '尚无实测数据';
+  if (!import.meta.release) {
+    session.acceptedTimes = [];
+    debug.clear('正在加载模型', RECOGNITION_MODES[session.mode].label);
+    handReading.textContent = '正在加载';
+    mouthReading.textContent = '正在加载';
+    trackingReading.textContent = '正在加载模型';
+    fahPerformance.textContent = '尚无实测数据';
+  }
   setStatus('Starting face and hand tracking…', 'loading');
   try {
     const tracker = await createTracker(controller.signal, session.mode);
@@ -302,22 +306,26 @@ async function loadTracking(session) {
       return;
     }
     session.tracker = tracker;
-    trackingReading.textContent = '已加载，等待画面';
     setStatus('Camera ready', 'live');
-    if (session.mode === 'fah') refreshFahHealth();
+    if (!import.meta.release) {
+      trackingReading.textContent = '已加载，等待画面';
+      if (session.mode === 'fah') refreshFahHealth();
+    }
   } catch (error) {
     if (camera === session && !controller.signal.aborted) trackingError(error);
   }
 }
 
 function trackingError(error) {
-  console.error('Fog Mirror tracking:', error);
-  debug.clear('追踪已停止，可切换方案重试');
   liveState.textContent = 'Live mirror';
-  handReading.textContent = '追踪已停止';
-  mouthReading.textContent = '追踪已停止';
-  trackingReading.textContent = camera?.mode === 'fah' ? error.message : '加载或识别失败，可切换方案重试';
-  if (camera?.mode === 'fah') fahPerformance.textContent = '尚无实测数据：' + error.message;
+  if (!import.meta.release) {
+    console.error('Fog Mirror tracking:', error);
+    debug.clear('追踪已停止，可切换方案重试');
+    handReading.textContent = '追踪已停止';
+    mouthReading.textContent = '追踪已停止';
+    trackingReading.textContent = camera?.mode === 'fah' ? error.message : '加载或识别失败，可切换方案重试';
+    if (camera?.mode === 'fah') fahPerformance.textContent = '尚无实测数据：' + error.message;
+  }
   setStatus('Tracking could not start or stopped. Turn the camera off and back on to retry.', 'error');
 }
 
@@ -326,7 +334,7 @@ function render(session, timestamp) {
   const seconds = Math.max(0, (timestamp - (session.lastFrame ?? timestamp)) / 1000);
   session.lastFrame = timestamp;
   mirror.fade(seconds);
-  const fah = session.mode === 'fah';
+  const fah = !import.meta.release && session.mode === 'fah';
   const lastUpdate = fah ? session.lastResultReceived : session.lastResult;
   const resultAge = timestamp - lastUpdate;
   if (Number.isFinite(lastUpdate) && resultAge >= STALE_LANDMARKS && !session.stale) {
@@ -334,16 +342,18 @@ function render(session, timestamp) {
     session.fog = null;
     if (!fah || !session.hand.pointPressed) session.hand.reset();
     session.mouth.reset();
-    debug.clear(session.dropped ? '识别结果超时，等待新画面' : '追踪结果已过期，等待新画面');
     liveState.textContent = 'Live mirror';
-    handReading.textContent = '等待新画面';
-    mouthReading.textContent = '等待新画面';
-    trackingReading.textContent = '画面已过期，已暂停交互';
+    if (!import.meta.release) {
+      debug.clear(session.dropped ? '识别结果超时，等待新画面' : '追踪结果已过期，等待新画面');
+      handReading.textContent = '等待新画面';
+      mouthReading.textContent = '等待新画面';
+      trackingReading.textContent = '画面已过期，已暂停交互';
+    }
     setStatus('Tracking paused. Waiting for a fresh frame…', 'loading');
   }
   if (fah && session.hand.pointPressed && resultAge >= FAH_STROKE_GAP) session.hand.reset();
   if (session.fog && timestamp - session.lastResult < STALE_LANDMARKS) {
-    mirror.fogAt(session.fog, session.mode === 'original' ? Math.min(seconds, 0.1) : seconds);
+    mirror.fogAt(session.fog, !import.meta.release && session.mode === 'original' ? Math.min(seconds, 0.1) : seconds);
   }
   mirror.draw(video);
   if (recordingView && recorder.state === 'recording') {
@@ -377,18 +387,22 @@ async function infer(session, timestamp) {
     const elapsed = received - timestamp;
     if (elapsed > STALE_LANDMARKS) {
       session.dropped++;
-      trackingReading.textContent = Math.round(elapsed) + ' ms · 已丢弃过期结果';
-      if (session.stale || !Number.isFinite(session.lastResult)) {
-        debug.clear('识别结果超时（' + Math.round(elapsed) + ' ms），等待新画面');
-      }
-      if (metrics) {
-        fahPerformance.textContent = fahMeasurementLabel(metrics, null) +
-          ' · 样本 ' + metrics.sampleCount + ' · 本帧超过 ' + STALE_LANDMARKS + ' ms，未用于绘画';
+      if (!import.meta.release) {
+        trackingReading.textContent = Math.round(elapsed) + ' ms · 已丢弃过期结果';
+        if (session.stale || !Number.isFinite(session.lastResult)) {
+          debug.clear('识别结果超时（' + Math.round(elapsed) + ' ms），等待新画面');
+        }
+        if (metrics) {
+          fahPerformance.textContent = fahMeasurementLabel(metrics, null) +
+            ' · 样本 ' + metrics.sampleCount + ' · 本帧超过 ' + STALE_LANDMARKS + ' ms，未用于绘画';
+        }
       }
       if (session.dropped >= 3) {
-        setStatus(session.mode === 'fah'
-          ? 'FAH-S 已返回结果，但连续超时，镜面交互已暂停。可切换到仅修复版。'
-          : 'Tracking is too slow. Try the landmark rules mode.', 'loading');
+        setStatus(!import.meta.release
+          ? session.mode === 'fah'
+            ? 'FAH-S 已返回结果，但连续超时，镜面交互已暂停。可切换到仅修复版。'
+            : 'Tracking is too slow. Try the landmark rules mode.'
+          : 'Tracking paused. Waiting for a fresh frame…', 'loading');
       }
       return;
     }
@@ -400,64 +414,22 @@ async function infer(session, timestamp) {
     session.lastResult = timestamp;
     session.lastResultReceived = received;
     const pointsInMirror = hand?.map(point => mirror.toMirror(point));
-    const { pose, source } = handPredicted ? { pose: 'other', source: 'none' } :
+    const { pose, source } = !import.meta.release && handPredicted ? { pose: 'other', source: 'none' } :
       session.classify(handWorld ?? hand, gesture, session.hand.pointPressed, pointsInMirror);
     const view = visibleCrop();
-    const outside = pointsInMirror && !handPredicted && (pose === 'point' || session.hand.pointPressed) &&
+    const outside = pointsInMirror && (import.meta.release || !handPredicted) && (pose === 'point' || session.hand.pointPressed) &&
       !mirror.inDrawingArea(pointsInMirror[8], view);
     if (outside) session.hand.reset();
     const action = outside ? null : session.hand.update(pose, pointsInMirror, timestamp,
-      isSpreadHand(handWorld ?? hand), { predicted: handPredicted });
-    const pausedStroke = session.mode === 'fah' && session.hand.pointInterrupted;
+      isSpreadHand(handWorld ?? hand), { predicted: !import.meta.release && handPredicted });
+    const pausedStroke = !import.meta.release && session.mode === 'fah' && session.hand.pointInterrupted;
     const label = session.hand.pointPressed && !pausedStroke ? 'Drawing' : 'Live mirror';
     if (liveState.textContent !== label) liveState.textContent = label;
     if (action?.type === 'print') session.hand.printed = mirror.stamp(action.points, view);
     else if (action) mirror.wipe(action);
-    const names = {
-      Open_Palm: '张手', Pointing_Up: '食指向上', Closed_Fist: '握拳', Thumb_Up: '点赞',
-      Thumb_Down: '拇指向下', Victory: '胜利手势', ILoveYou: '爱你手势', None: '未确认',
-    };
-    const state = outside ? '移入镜面中央' : pausedStroke ? '笔画暂停 · 等待下一帧' :
-      handPredicted ? '暂未检测到手' :
-      session.hand.pointPressed ? '正在画线' :
-      session.hand.clearing ? '挥擦中' : session.hand.printed ? '已留手印' :
-      pose === 'point' ? '食指前推可画线' : pose === 'open' ? '张手' : '其他姿势';
-    const modelLabel = gesture ? (names[gesture.name] ?? gesture.name) + ' ' + Math.round(gesture.score * 100) + '%' : '';
-    handReading.textContent = !hand ? '未检测到手' :
-      [modelLabel, state, source === 'rules' && session.mode === 'enhanced' ? '规则辅助' : ''].filter(Boolean).join(' · ');
-    mouthReading.textContent = !face ? '未检测到人脸' : session.fog ? '正在起雾' : '闭合或等待确认';
-    if ((session.mode === 'enhanced' || session.mode === 'fah') && face) {
-      mouthReading.textContent += Number.isFinite(expressions?.jawOpen) ?
-        ' · 张嘴 ' + Math.round(expressions.jawOpen * 100) + '%' : ' · 表情数据缺失';
-    }
-    session.acceptedTimes.push(timestamp);
-    if (session.acceptedTimes.length > 60) session.acceptedTimes.shift();
-    const span = timestamp - session.acceptedTimes[0];
-    const fps = span > 0 ? (session.acceptedTimes.length - 1) * 1000 / span : null;
-    trackingReading.textContent = Math.round(elapsed) + ' ms · ' + (fps?.toFixed(1) ?? '—') + ' FPS';
-    let performanceLabel = null;
-    if (metrics) {
-      performanceLabel = fahMeasurementLabel(metrics, fps);
-      fahPerformance.textContent = performanceLabel + ' · 样本 ' + metrics.sampleCount;
-    }
-    debug.update({
-      timestamp: session.mode === 'fah' ? received : timestamp,
-      mode: RECOGNITION_MODES[session.mode].label,
-      points: handPredicted ? null : pointsInMirror ?? null,
-      brush: action?.type === 'line' ? action.to : session.hand.stroke?.end ?? null,
-      pressed: Boolean(session.hand.pointPressed),
-      quickResponse: session.mode === 'fah',
-      pressure: session.hand.pressMetrics?.timestamp === timestamp ? session.hand.pressMetrics : null,
-      pressureHint: !hand || handPredicted ? '等待手部实测关键点' : outside ? '将食指移入镜面中央' :
-        pose === 'point' ? '等待有效的手部深度' : '伸出食指，收起其他手指',
-      action: !hand ? '未检测到手' : state,
-      recognition: handPredicted ? '模型补帧 · 暂停绘画' : !hand ? '未检测到手' :
-        [modelLabel, source === 'projection' ? '画面关键点辅助' : source === 'model' ? '模型分类' :
-        session.mode === 'enhanced' ? '规则辅助' : '关键点规则'].filter(Boolean).join(' · '),
-      fog: Boolean(session.fog),
-      elapsed,
-      performance: performanceLabel,
-      tipCamera: handPredicted ? null : tipCamera,
+    if (!import.meta.release) updateTrackingReadout(session, {
+      hand, face, handPredicted, gesture, expressions, metrics, tipCamera, received, elapsed,
+      timestamp, pointsInMirror, pose, source, outside, action, pausedStroke,
     });
   } catch (error) {
     if (camera !== session || controller.signal.aborted) return;
@@ -472,6 +444,58 @@ async function infer(session, timestamp) {
   }
 }
 
+function updateTrackingReadout(session, {
+  hand, face, handPredicted, gesture, expressions, metrics, tipCamera, received, elapsed,
+  timestamp, pointsInMirror, pose, source, outside, action, pausedStroke,
+}) {
+  const names = {
+    Open_Palm: '张手', Pointing_Up: '食指向上', Closed_Fist: '握拳', Thumb_Up: '点赞',
+    Thumb_Down: '拇指向下', Victory: '胜利手势', ILoveYou: '爱你手势', None: '未确认',
+  };
+  const state = outside ? '移入镜面中央' : pausedStroke ? '笔画暂停 · 等待下一帧' :
+    handPredicted ? '暂未检测到手' :
+    session.hand.pointPressed ? '正在画线' :
+    session.hand.clearing ? '挥擦中' : session.hand.printed ? '已留手印' :
+    pose === 'point' ? '食指前推可画线' : pose === 'open' ? '张手' : '其他姿势';
+  const modelLabel = gesture ? (names[gesture.name] ?? gesture.name) + ' ' + Math.round(gesture.score * 100) + '%' : '';
+  handReading.textContent = !hand ? '未检测到手' :
+    [modelLabel, state, source === 'rules' && session.mode === 'enhanced' ? '规则辅助' : ''].filter(Boolean).join(' · ');
+  mouthReading.textContent = !face ? '未检测到人脸' : session.fog ? '正在起雾' : '闭合或等待确认';
+  if ((session.mode === 'enhanced' || session.mode === 'fah') && face) {
+    mouthReading.textContent += Number.isFinite(expressions?.jawOpen) ?
+      ' · 张嘴 ' + Math.round(expressions.jawOpen * 100) + '%' : ' · 表情数据缺失';
+  }
+  session.acceptedTimes.push(timestamp);
+  if (session.acceptedTimes.length > 60) session.acceptedTimes.shift();
+  const span = timestamp - session.acceptedTimes[0];
+  const fps = span > 0 ? (session.acceptedTimes.length - 1) * 1000 / span : null;
+  trackingReading.textContent = Math.round(elapsed) + ' ms · ' + (fps?.toFixed(1) ?? '—') + ' FPS';
+  let performanceLabel = null;
+  if (metrics) {
+    performanceLabel = fahMeasurementLabel(metrics, fps);
+    fahPerformance.textContent = performanceLabel + ' · 样本 ' + metrics.sampleCount;
+  }
+  debug.update({
+    timestamp: session.mode === 'fah' ? received : timestamp,
+    mode: RECOGNITION_MODES[session.mode].label,
+    points: handPredicted ? null : pointsInMirror ?? null,
+    brush: action?.type === 'line' ? action.to : session.hand.stroke?.end ?? null,
+    pressed: Boolean(session.hand.pointPressed),
+    quickResponse: session.mode === 'fah',
+    pressure: session.hand.pressMetrics?.timestamp === timestamp ? session.hand.pressMetrics : null,
+    pressureHint: !hand || handPredicted ? '等待手部实测关键点' : outside ? '将食指移入镜面中央' :
+      pose === 'point' ? '等待有效的手部深度' : '伸出食指，收起其他手指',
+    action: !hand ? '未检测到手' : state,
+    recognition: handPredicted ? '模型补帧 · 暂停绘画' : !hand ? '未检测到手' :
+      [modelLabel, source === 'projection' ? '画面关键点辅助' : source === 'model' ? '模型分类' :
+      session.mode === 'enhanced' ? '规则辅助' : '关键点规则'].filter(Boolean).join(' · '),
+    fog: Boolean(session.fog),
+    elapsed,
+    performance: performanceLabel,
+    tipCamera: handPredicted ? null : tipCamera,
+  });
+}
+
 function updateDebugMode() {
   const enabled = debugEnabled.checked;
   debug.expire(performance.now(), STALE_LANDMARKS);
@@ -480,11 +504,6 @@ function updateDebugMode() {
   debugToggle.setAttribute('aria-label', enabled ? '隐藏调试叠层' : '显示调试叠层');
   debugToggle.title = enabled ? '隐藏调试叠层' : '显示调试叠层';
 }
-debugEnabled.addEventListener('change', updateDebugMode);
-debugToggle.addEventListener('click', () => {
-  debugEnabled.checked = !debugEnabled.checked;
-  updateDebugMode();
-});
 
 function updateSensitivity(recalibrate = true) {
   const thresholds = indexThresholds(indexSensitivity.valueAsNumber);
@@ -502,11 +521,6 @@ function updateSensitivity(recalibrate = true) {
   }
   if (recalibrate) debug.clear('灵敏度已更新，保持起始距离后再前推');
 }
-indexSensitivity.addEventListener('input', () => updateSensitivity());
-resetSensitivity.addEventListener('click', () => {
-  indexSensitivity.value = '1';
-  updateSensitivity();
-});
 
 async function refreshFahHealth() {
   fahHealthRequest?.abort();
@@ -532,30 +546,44 @@ function updateRecognitionMode() {
   void refreshFahHealth();
   if (!camera?.playing) debug.clear('等待摄像头', RECOGNITION_MODES[recognitionMode.value].label);
 }
-recognitionMode.addEventListener('change', () => {
+if (!import.meta.release) {
+  debugEnabled.addEventListener('change', updateDebugMode);
+  debugToggle.addEventListener('click', () => {
+    debugEnabled.checked = !debugEnabled.checked;
+    updateDebugMode();
+  });
+  indexSensitivity.addEventListener('input', () => updateSensitivity());
+  resetSensitivity.addEventListener('click', () => {
+    indexSensitivity.value = '1';
+    updateSensitivity();
+  });
+  recognitionMode.addEventListener('change', () => {
+    updateRecognitionMode();
+    cancelPhoto();
+    recorder.stop('Recognition mode changed. Clip ready to download.');
+    if (camera?.playing) loadTracking(camera);
+    else {
+      mirror.legacyFog = recognitionMode.value === 'original';
+      mirror.clear();
+    }
+  });
   updateRecognitionMode();
-  cancelPhoto();
-  recorder.stop('Recognition mode changed. Clip ready to download.');
-  if (camera?.playing) loadTracking(camera);
-  else {
-    mirror.legacyFog = recognitionMode.value === 'original';
-    mirror.clear();
-  }
-});
+  updateSensitivity(false);
+  updateDebugMode();
+}
 resetInteraction.addEventListener('click', () => {
   if (!camera?.playing) return;
   camera.hand?.reset();
   camera.mouth?.reset();
   camera.fog = null;
-  debug.clear('已重新校准，等待新手势');
   mirror.clear();
   liveState.textContent = 'Live mirror';
-  handReading.textContent = '已重新校准，等待手势';
-  mouthReading.textContent = '雾气已清除';
+  if (!import.meta.release) {
+    debug.clear('已重新校准，等待新手势');
+    handReading.textContent = '已重新校准，等待手势';
+    mouthReading.textContent = '雾气已清除';
+  }
 });
-updateRecognitionMode();
-updateSensitivity(false);
-updateDebugMode();
 
 start.addEventListener('click', startCamera);
 stop.addEventListener('click', () => finishCamera());

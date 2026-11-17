@@ -24,19 +24,19 @@ function startWorker(worker, signal, mode) {
 
 export async function createTracker(signal, mode = 'enhanced') {
   signal.throwIfAborted();
-  if (mode === 'fah') {
+  if (!import.meta.release && mode === 'fah') {
     const { createFahTracker } = await import('./fah-tracker.js?v=fah-entry');
     return createFahTracker(signal, () => createTracker(signal, 'fah-face'));
   }
   let worker;
   try {
-    worker = new Worker(new URL('./tracking-worker.js?v=fah-v1', import.meta.url));
+    worker = new Worker(new URL('./tracking-worker.js', import.meta.url));
     await startWorker(worker, signal, mode);
     signal.throwIfAborted();
   } catch (error) {
     worker?.terminate();
     signal.throwIfAborted();
-    const { createVision } = await import('./vision.js?v=fah-v1');
+    const { createVision } = await import('./vision.js');
     const vision = await createVision(mode);
     if (signal.aborted) {
       vision.close();

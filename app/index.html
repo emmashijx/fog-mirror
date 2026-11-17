@@ -7,8 +7,11 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; media-src 'self' blob:; object-src 'none'; base-uri 'none'">
   <meta name="theme-color" content="#ffffff">
   <title>🪞 Emma’s Fog Mirror</title>
-  <link rel="stylesheet" href="./style.css?v=fah-v1">
-  <script type="module" src="./app.js?v=fah-fast-stroke"></script>
+  <link rel="stylesheet" href="./style.css?v=release-build">
+  <!-- development:begin -->
+  <link rel="stylesheet" href="./development.css">
+  <!-- development:end -->
+  <script type="module" src="./app.js?v=release-build"></script>
 </head>
 <body>
   <main class="studio">
@@ -20,6 +23,7 @@
     <div class="workspace">
       <section class="mirror" id="mirror-view" aria-label="Mirror preview">
         <canvas id="mirror" width="960" height="640" aria-label="Live mirror with fog and hand effects"></canvas>
+        <!-- development:begin -->
         <canvas id="debug-overlay" class="debug-overlay" width="960" height="640" aria-hidden="true" hidden></canvas>
         <div id="debug-status" class="debug-status" role="group" aria-label="手势调试与灵敏度" hidden>
           <strong data-debug="mode">调试模式</strong>
@@ -42,6 +46,7 @@
           <small>黄圈：食指尖 · 绿点：笔触 · 数字：关键点编号</small>
         </div>
         <button class="mirror-tool debug-switch" id="debug-toggle" type="button" aria-label="显示调试叠层" aria-pressed="false" title="显示调试叠层" hidden>调试</button>
+        <!-- development:end -->
         <div class="mirror-idle" id="idle">
           <button class="button primary" id="start-camera" type="button">enable your camera to start</button>
         </div>
@@ -87,6 +92,7 @@
       </section>
 
       <aside class="sidebar" aria-label="Mirror controls and gestures">
+        <!-- development:begin -->
         <section class="panel recognition" aria-labelledby="recognition-title">
           <h2 id="recognition-title"><label for="recognition-mode">识别方案对比</label></h2>
           <select id="recognition-mode">
@@ -116,10 +122,12 @@
           <button class="button record" id="reset-interaction" type="button" disabled>清除雾气 / 重新校准</button>
           <p class="notice">切换方案会清空雾气、重新校准，并停止当前录像。表情用于模拟哈气，不检测真实呼吸。</p>
         </section>
+        <!-- development:end -->
         <section class="panel appearance" aria-labelledby="fog-appearance">
           <h2 id="fog-appearance"><label for="wetness">Fog appearance</label></h2>
           <input id="wetness" class="fog-lightness-range" type="range" min="0" max="100" value="0" aria-valuetext="Dry fog">
           <div class="range-labels" aria-hidden="true"><span>Dry</span><span>Wet</span></div>
+          <!-- release:clear-mirror -->
         </section>
         <section class="panel gestures">
           <h2>Gestures</h2>

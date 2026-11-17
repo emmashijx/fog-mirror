@@ -1,7 +1,8 @@
 import { FaceLandmarker, FilesetResolver, GestureRecognizer, HandLandmarker } from './vendor/vision_bundle.mjs';
 
+
 export async function createVision(mode = 'enhanced') {
-  const enhanced = mode === 'enhanced' || mode === 'fah-face';
+  const enhanced = import.meta.release || mode === 'enhanced' || mode === 'fah-face';
   const asset = name => new URL('./vendor/' + name, import.meta.url).href;
   const fileset = await FilesetResolver.forVisionTasks(asset('wasm'));
   const face = await FaceLandmarker.createFromOptions(fileset, {
@@ -12,14 +13,18 @@ export async function createVision(mode = 'enhanced') {
   });
   let hand;
   try {
-    if (mode !== 'fah-face') hand = await (enhanced ? GestureRecognizer : HandLandmarker).createFromOptions(fileset, {
-      baseOptions: {
-        modelAssetPath: asset(enhanced ? 'gesture_recognizer.task' : 'hand_landmarker.task'),
-        delegate: 'CPU',
-      },
-      runningMode: 'VIDEO',
-      numHands: 1,
-    });
+    if (import.meta.release || mode !== 'fah-face') {
+      const handModel = !import.meta.release && !enhanced ? HandLandmarker : GestureRecognizer;
+      const modelAsset = !import.meta.release && !enhanced ? 'hand_landmarker.task' : 'gesture_recognizer.task';
+      hand = await handModel.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: asset(modelAsset),
+          delegate: 'CPU',
+        },
+        runningMode: 'VIDEO',
+        numHands: 1,
+      });
+    }
   } catch (error) {
     face.close();
     throw error;
@@ -28,7 +33,7 @@ export async function createVision(mode = 'enhanced') {
     detect(frame, timestamp) {
       const faceResult = face.detectForVideo(frame, timestamp);
       const handResult = !hand ? {} :
-        enhanced ? hand.recognizeForVideo(frame, timestamp) : hand.detectForVideo(frame, timestamp);
+        !import.meta.release && !enhanced ? hand.detectForVideo(frame, timestamp) : hand.recognizeForVideo(frame, timestamp);
       const landmarks = faceResult.faceLandmarks[0];
       const category = handResult.gestures?.[0]?.[0];
       return {

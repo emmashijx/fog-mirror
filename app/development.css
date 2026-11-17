@@ -1,0 +1,24 @@
+.mirror .debug-overlay { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.debug-status { position: absolute; z-index: 2; left: 14px; bottom: 14px; display: grid; gap: 4px; width: min(390px, calc(100% - 84px)); padding: 11px 13px; border: 1px solid #bceef466; border-radius: 10px; background: #071b24dd; color: #ffffff; font: 12px/1.45 system-ui, sans-serif; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; pointer-events: none; }
+.debug-status strong { color: #68e7ff; font-size: 13px; }
+.debug-status small { color: #d4e7ed; font-size: 10px; }
+.debug-tuning { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5px 10px; margin-top: 3px; padding-top: 7px; border-top: 1px solid #bceef444; pointer-events: auto; }
+.debug-tuning output { margin-left: 6px; color: #ffe66c; }
+.debug-tuning input, .debug-tuning small { grid-column: 1 / -1; }
+.debug-tuning input { width: 100%; min-height: 24px; margin: 0; accent-color: #68e7ff; cursor: pointer; }
+.debug-tuning button { padding: 3px 8px; border: 1px solid #bceef477; border-radius: 5px; background: #153843; color: white; font: inherit; cursor: pointer; }
+.debug-tuning :is(input, button):focus-visible { outline: 2px solid #ffe66c; outline-offset: 2px; }
+.debug-switch { position: absolute; z-index: 2; right: 14px; bottom: 14px; font: 600 12px system-ui, sans-serif; }
+.debug-switch[aria-pressed="true"] { background: #d6f6f3; border-color: #549c98; }
+.recognition select { width: 100%; min-height: 38px; margin-top: 10px; padding: 6px; border: 1px solid #b7dfdd; border-radius: 7px; background: #fff; color: inherit; font: inherit; font-size: 12px; }
+.recognition select:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 3px; }
+.fah-details { display: grid; gap: 6px; margin-top: 10px; padding: 9px; border: 1px solid #b7dfdd; border-radius: 7px; background: #eff9f8; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.fah-details a { color: var(--accent-ink); }
+.debug-option { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.debug-option input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent-ink); }
+.debug-option input:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 3px; }
+.debug-help { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.recognition-readings { display: grid; gap: 6px; margin: 12px 0; font-size: 12px; line-height: 1.45; }
+.recognition-readings div { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; }
+.recognition-readings dt { color: var(--muted); }
+.recognition-readings dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
