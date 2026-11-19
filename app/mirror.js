@@ -74,21 +74,6 @@ export class Mirror {
     ctx.restore();
   }
 
-  resize(width, height) {
-    if (width === this.width && height === this.height) return;
-    const previous = this.fog.canvas;
-    this.width = this.canvas.width = width;
-    this.height = this.canvas.height = height;
-    this.canvasBounds = { x: 0, y: 0, width, height };
-    this.fog = layer(width, height);
-    const scale = Math.max(width / previous.width, height / previous.height);
-    this.fog.drawImage(previous, (width - previous.width * scale) / 2,
-      (height - previous.height * scale) / 2, previous.width * scale, previous.height * scale);
-    this.sample = layer(width / 2, height / 2);
-    this.wetSurface = this.wetAppearance = this.beads = null;
-    this.appearanceDirty = this.surfaceDirty = true;
-  }
-
   captureFrame(video) {
     this.drawCamera(this.sample, video);
     return this.sample.canvas;

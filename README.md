@@ -44,19 +44,6 @@ To build from GitHub, run **Build Fog Mirror release** under **Actions** on
 `main` and download the **fog-mirror-production** artifact. The same source
 runs with all four modes and the debug overlay via `python3 tools/start.py`.
 
-### Phones
-
-Open the HTTPS site directly in Safari or Chrome and allow the front camera.
-Portrait phones use a 720×960 mirror, with larger touch controls and safe-area
-spacing. Rotate the phone for a landscape view. The fullscreen button also expands
-the mirror within the page on browsers that lack native fullscreen.
-
-Photos retain their JPG format and the three-second timer. Videos retain MP4
-and the selected duration. When supported, **Save or share** opens the phone's
-system share sheet. Download links are also available. A recording keeps its
-original frame dimensions through rotation and ends if the page goes into the
-background. Returning to the page resets gesture calibration.
-
 ## Recognition comparison
 
 The **识别方案对比** panel offers three browser modes, plus the optional local FAH mode described below:

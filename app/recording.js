@@ -96,8 +96,7 @@ export class MirrorRecorder {
       (chunk.type || session.recorder.mimeType || this.mime).split(';')[0] === MP4);
     if (!session.error && session.chunks.length && isMp4) {
       this.revokeClip();
-      const blob = new Blob(session.chunks, { type: MP4 });
-      this.clip = { blob, url: URL.createObjectURL(blob) };
+      this.clip = { url: URL.createObjectURL(new Blob(session.chunks, { type: MP4 })) };
       this.message = session.reason || 'Clip ready to download.';
     } else if (!session.error && !isMp4) {
       this.message = 'This browser did not produce an MP4 video. Try another browser.';
