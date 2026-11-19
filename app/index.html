@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="An interactive webcam mirror with virtual condensation.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; media-src 'self' blob:; object-src 'none'; base-uri 'none'">
   <meta name="theme-color" content="#ffffff">
@@ -86,6 +86,7 @@
           <button class="button record" id="stop-video" type="button" hidden>Stop recording</button>
           <a class="button download" id="download-photo" hidden>Download JPG <span aria-hidden="true">↓</span></a>
           <a class="button download" id="download-fullscreen" hidden>Download MP4 <span aria-hidden="true">↓</span></a>
+          <button class="button record" id="share-capture" type="button" hidden>Save or share</button>
           <p class="notice" id="camera-message" role="status"></p>
         </div>
         <p id="fullscreen-message" class="mirror-message" role="status"></p>
@@ -151,7 +152,7 @@
       <p class="status" id="status" role="status" data-state="idle">Camera off</p>
       <button class="button camera-off" id="stop-camera" type="button" hidden>Turn off camera</button>
     </footer>
-    <video id="video" playsinline muted hidden></video>
+    <video id="video" playsinline muted autoplay hidden></video>
   </main>
 </body>
 </html>

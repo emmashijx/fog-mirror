@@ -44,6 +44,7 @@ const startVideo = element('start-video');
 const stopVideo = element('stop-video');
 const downloadPhoto = element('download-photo');
 const downloadFullscreen = element('download-fullscreen');
+const shareCapture = element('share-capture');
 const cameraMessage = element('camera-message');
 const resetInteraction = element('reset-interaction');
 const recognitionMode = !import.meta.release && element('recognition-mode');
@@ -74,14 +75,55 @@ let captureView = 'choices';
 let captureTrigger;
 let expanded = false;
 let wasNativeFullscreen = false;
+let shareFile;
+let wakeLock;
+let layoutRevision = 0;
+const portraitLayout = matchMedia('(max-width: 760px) and (orientation: portrait)');
+
+function syncMirrorSize() {
+  if (recorder.state !== 'idle') return;
+  const width = portraitLayout.matches ? 720 : 960;
+  const height = portraitLayout.matches ? 960 : 640;
+  if (mirror.width === width && mirror.height === height) return;
+  layoutRevision++;
+  mirror.resize(width, height);
+  if (!import.meta.release) {
+    const overlay = element('debug-overlay');
+    overlay.width = width;
+    overlay.height = height;
+    debug.clear('视图已切换，等待新手势');
+  }
+  camera?.hand?.reset();
+  camera?.mouth?.reset();
+  if (camera) camera.fog = null;
+}
+portraitLayout.addEventListener('change', syncMirrorSize);
+syncMirrorSize();
+
+async function keepScreenAwake(session) {
+  if (!navigator.wakeLock || document.hidden || wakeLock) return;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    if (camera !== session || document.hidden) {
+      await lock.release();
+      return;
+    }
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; }, { once: true });
+  } catch {
+    // The browser can refuse a screen lock when the battery is low.
+  }
+}
 
 function isFullscreen() {
   return expanded || document.fullscreenElement === mirrorView;
 }
 
 function visibleCrop() {
-  if (!isFullscreen() || !mirrorView.clientHeight) return null;
-  return mirrorCrop(mirror.canvas, mirrorView.clientWidth / mirrorView.clientHeight);
+  if (!mirrorView.clientHeight) return null;
+  const aspect = mirrorView.clientWidth / mirrorView.clientHeight;
+  return Math.abs(aspect - mirror.width / mirror.height) < 0.01 ? null :
+    mirrorCrop(mirror.canvas, aspect);
 }
 
 function updateFullscreen() {
@@ -127,6 +169,8 @@ function updateCaptureMenu() {
   stopVideo.hidden = !active;
   downloadPhoto.hidden = !photoUrl || active || stopping || captureView === 'video';
   setVideoDownload(downloadFullscreen, active || stopping || captureView === 'video');
+  shareCapture.hidden = !shareFile || !navigator.canShare?.({ files: [shareFile] }) ||
+    active || stopping || captureView === 'video';
   cameraMessage.textContent = stopping ? 'Saving clip…' : (photoMessage || recorder.message ||
     (!recorder.mime ? MP4_UNAVAILABLE : ''));
 }
@@ -169,7 +213,11 @@ function updateRecording() {
   const stopping = recorder.state === 'stopping';
   const finished = recorder.state === 'idle' && lastRecordingState !== 'idle';
   lastRecordingState = recorder.state;
-  if (finished) recordingView = null;
+  if (finished) {
+    recordingView = null;
+    if (recorder.clip?.blob) shareFile = new File([recorder.clip.blob], 'fog-mirror.mp4', { type: 'video/mp4' });
+    syncMirrorSize();
+  }
   record.disabled = stopping || (!active && (!camera?.playing || !recorder.mime));
   recordLabel.textContent = active ? 'Stop recording' : stopping ? 'Saving clip…' : 'Record mirror';
   recording.hidden = !active;
@@ -203,6 +251,8 @@ function finishCamera(message = 'Camera off', state = 'idle') {
   session.tracker?.close();
   cancelAnimationFrame(session.animation);
   session.stream?.getTracks().forEach(track => track.stop());
+  wakeLock?.release().catch(() => {});
+  wakeLock = null;
   video.srcObject = null;
   mirror.clear();
   if (!import.meta.release) debug.clear('等待摄像头');
@@ -213,7 +263,7 @@ function finishCamera(message = 'Camera off', state = 'idle') {
 
 function cameraError(error) {
   if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
-    return 'Camera access was denied. Allow camera access in Chrome, then retry.';
+    return 'Allow camera access in your browser settings, then retry. In an in-app browser, open this page in Safari or Chrome.';
   }
   if (error.name === 'NotFoundError') return 'No camera found. Connect a camera and try again.';
   if (error.name === 'NotReadableError') return 'The camera is busy or unavailable. Close other camera apps and retry.';
@@ -239,7 +289,12 @@ async function startCamera() {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+      video: {
+        width: { ideal: portraitLayout.matches ? 720 : 1280 },
+        height: { ideal: portraitLayout.matches ? 960 : 720 },
+        frameRate: { ideal: 24, max: 30 },
+        facingMode: 'user',
+      },
       audio: false,
     });
     if (camera !== session) {
@@ -265,6 +320,7 @@ async function startCamera() {
   }
 
   session.playing = true;
+  void keepScreenAwake(session);
   setStatus('Starting face and hand tracking…', 'loading');
   updateCamera();
   session.animation = requestAnimationFrame(timestamp => render(session, timestamp));
@@ -289,7 +345,7 @@ async function loadTracking(session) {
   session.trackingController = controller;
   mirror.legacyFog = !import.meta.release && session.mode === 'original';
   mirror.clear();
-  liveState.textContent = 'Live mirror';
+  liveState.textContent = 'Loading gestures…';
   if (!import.meta.release) {
     session.acceptedTimes = [];
     debug.clear('正在加载模型', RECOGNITION_MODES[session.mode].label);
@@ -306,6 +362,7 @@ async function loadTracking(session) {
       return;
     }
     session.tracker = tracker;
+    liveState.textContent = 'Live mirror';
     setStatus('Camera ready', 'live');
     if (!import.meta.release) {
       trackingReading.textContent = '已加载，等待画面';
@@ -317,7 +374,7 @@ async function loadTracking(session) {
 }
 
 function trackingError(error) {
-  liveState.textContent = 'Live mirror';
+  liveState.textContent = 'Tracking unavailable';
   if (!import.meta.release) {
     console.error('Fog Mirror tracking:', error);
     debug.clear('追踪已停止，可切换方案重试');
@@ -378,11 +435,12 @@ function fahMeasurementLabel(metrics, fps) {
 
 async function infer(session, timestamp) {
   const controller = session.trackingController;
+  const revision = layoutRevision;
   session.busy = true;
   try {
     const { face, hand, handWorld, handPredicted, gesture, expressions, metrics, tipCamera } =
       await session.tracker.detect(mirror.captureFrame(video), timestamp);
-    if (camera !== session || controller.signal.aborted) return;
+    if (camera !== session || controller.signal.aborted || document.hidden || revision !== layoutRevision) return;
     const received = performance.now();
     const elapsed = received - timestamp;
     if (elapsed > STALE_LANDMARKS) {
@@ -676,6 +734,7 @@ function capturePhoto(job) {
       photoUrl = URL.createObjectURL(blob);
       downloadPhoto.href = photoUrl;
       downloadPhoto.download = 'fog-mirror.jpg';
+      shareFile = new File([blob], 'fog-mirror.jpg', { type: PHOTO_TYPE });
     }
     photoMessage = saved ? 'Photo ready to download.' : 'Photo could not be saved as a JPG. Try again.';
     setCaptureView('choices');
@@ -720,6 +779,17 @@ videoOptions.addEventListener('submit', event => {
   }
 });
 stopVideo.addEventListener('click', () => recorder.stop());
+shareCapture.addEventListener('click', async () => {
+  if (!shareFile || !navigator.canShare?.({ files: [shareFile] })) return;
+  try {
+    await navigator.share({ files: [shareFile] });
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      photoMessage = 'Sharing is unavailable. Use the download button to save your capture.';
+      updateCaptureMenu();
+    }
+  }
+});
 record.addEventListener('click', () => {
   if (recorder.state === 'recording') recorder.stop();
   else if (camera?.playing) {
@@ -730,7 +800,28 @@ record.addEventListener('click', () => {
 window.addEventListener('pagehide', () => {
   recorder.dispose();
   if (photoUrl) URL.revokeObjectURL(photoUrl);
+  photoUrl = null;
+  shareFile = null;
   finishCamera();
 });
 updateFullscreen();
+document.addEventListener('visibilitychange', () => {
+  if (!camera?.playing) return;
+  const session = camera;
+  layoutRevision++;
+  session.hand?.reset();
+  session.mouth?.reset();
+  session.fog = null;
+  if (document.hidden) {
+    cancelPhoto();
+    recorder.stop('Recording paused when you left the mirror. Your clip is ready to download.');
+    wakeLock?.release().catch(() => {});
+    wakeLock = null;
+  } else {
+    session.lastVideoTime = -1;
+    video.play().then(() => keepScreenAwake(session)).catch(error => {
+      if (camera === session) finishCamera(cameraError(error), 'error');
+    });
+  }
+});
 updateCamera();
